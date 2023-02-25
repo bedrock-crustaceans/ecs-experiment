@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{system::IntoSystemDescriptor, query::Query, Component, QueryFilter};
+use crate::{system::IntoSystemDescriptor, query::{Query, Res}, Component, Filter, resource::Resource};
 
 pub struct TestComponent;
 
@@ -20,8 +20,24 @@ pub struct TestFilter<T> {
     _marker: PhantomData<T>
 }
 
-impl<T> QueryFilter for TestFilter<T> {
+impl<T> Filter for TestFilter<T> {
 
+}
+
+pub struct TestFilter2<T> {
+    _marker: PhantomData<T>
+}
+
+impl<T> Filter for TestFilter2<T> {
+
+}
+
+pub struct TestResource {
+
+}
+
+impl Resource for TestResource {
+    
 }
 
 fn test_input<P>(system: impl IntoSystemDescriptor<P>) {
@@ -40,9 +56,18 @@ fn tuple_test_system(query: Query<(&TestComponent, &TestComponent2), TestFilter<
     
 }
 
+fn tuple_test_system2(query: Query<(&TestComponent, &TestComponent2), (TestFilter<TestComponent>, TestFilter2<TestComponent2>)>) {
+    
+}
+
+fn res_test_system(query: Query<&TestComponent>, res: Res<TestResource>) {
+    
+}
+
 #[test]
 fn test() {
     test_input(test_system);
     test_input(mut_test_system);
     test_input(tuple_test_system);
+    test_input(res_test_system);
 }
