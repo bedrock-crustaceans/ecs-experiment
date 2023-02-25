@@ -2,37 +2,40 @@ use std::marker::PhantomData;
 
 use crate::{Component, Filter};
 
-pub trait ComponentCollection {}
+pub trait ComponentCollection {
+    const MUTABLE: bool;
+}
 
-impl<'a, T: Component> ComponentCollection for &'a T {}
+impl<'a, C: Component> ComponentCollection for &'a C {
+    const MUTABLE: bool = false;
+}
 
-impl<'a, T: Component> ComponentCollection for &'a mut T {}
+impl<'a, C: Component> ComponentCollection for &'a mut C {
+    const MUTABLE: bool = true;
+}
 
-impl<'a, T0, T1> ComponentCollection for (T0, T1)
+impl<'a, C0, C1> ComponentCollection for (C0, C1)
 where
-    T0: ComponentCollection,
-    T1: ComponentCollection,
+    C0: ComponentCollection,
+    C1: ComponentCollection,
 {
+    const MUTABLE: bool = C0::MUTABLE || C1::MUTABLE;
 }
 
 pub trait FilterCollection {}
 
 impl FilterCollection for () {}
 
-impl<T: Filter> FilterCollection for T {}
+impl<F: Filter> FilterCollection for F {}
 
-impl<T0, T1> FilterCollection for (T0, T1)
+impl<F0, F1> FilterCollection for (F0, F1)
 where
-    T0: FilterCollection,
-    T1: FilterCollection,
+    F0: FilterCollection,
+    F1: FilterCollection,
 {
 }
 
 pub struct Query<C: ComponentCollection, F: FilterCollection = ()> {
     collection: C,
     _marker: PhantomData<F>,
-}
-
-pub struct Res<R> {
-    resource: R,
 }

@@ -1,13 +1,18 @@
 use crate::{
-    query::{ComponentCollection, FilterCollection, Query, Res},
-    resource::Resource,
+    event::{Event, EventReader, EventWriter},
+    query::{ComponentCollection, FilterCollection, Query},
+    resource::{Res, ResMut, Resource},
 };
 
-pub trait SystemParams {
+pub trait SystemParam {
+    const EXCLUSIVE: bool;
+
     fn print();
 }
 
-impl<T: ComponentCollection, F: FilterCollection> SystemParams for Query<T, F> {
+impl<T: ComponentCollection, F: FilterCollection> SystemParam for Query<T, F> {
+    const EXCLUSIVE: bool = T::MUTABLE;
+
     fn print() {
         println!(
             "{}\n{}",
@@ -17,37 +22,72 @@ impl<T: ComponentCollection, F: FilterCollection> SystemParams for Query<T, F> {
     }
 }
 
-impl<R: Resource> SystemParams for Res<R> {
+impl<'a, R: Resource> SystemParam for Res<'a, R> {
+    const EXCLUSIVE: bool = false;
+
     fn print() {
         println!("{}", std::any::type_name::<R>());
     }
 }
 
-pub trait IntoSystemDescriptor<Params> {
+impl<'a, R: Resource> SystemParam for ResMut<'a, R> {
+    const EXCLUSIVE: bool = true;
+
+    fn print() {
+        println!("{}", std::any::type_name::<R>());
+    }
+}
+
+impl<E: Event> SystemParam for EventWriter<E> {
+    const EXCLUSIVE: bool = false;
+
+    fn print() {
+        println!("{}", std::any::type_name::<E>());
+    }
+}
+
+impl<E: Event> SystemParam for EventReader<E> {
+    const EXCLUSIVE: bool = false;
+
+    fn print() {
+        println!("{}", std::any::type_name::<E>());
+    }
+}
+
+pub trait IntoSystemDescriptor<P> {
     fn into_descriptor(&self) -> SystemDescriptor;
 }
 
-impl<F, Params: SystemParams> IntoSystemDescriptor<Params> for F
+impl<F, P: SystemParam> IntoSystemDescriptor<P> for F
 where
-    F: FnMut(Params),
+    F: Fn(P),
 {
     fn into_descriptor(&self) -> SystemDescriptor {
-        Params::print();
+        P::print();
 
-        SystemDescriptor {}
+        SystemDescriptor {
+            exclusive: P::EXCLUSIVE,
+        }
     }
 }
 
-impl<F, Params1: SystemParams, Params2: SystemParams> IntoSystemDescriptor<(Params1, Params2)> for F
+impl<F, P0, P1> IntoSystemDescriptor<(P0, P1)> for F
 where
-    F: FnMut(Params1, Params2),
+    F: Fn(P0, P1),
+    P0: SystemParam,
+    P1: SystemParam,
 {
     fn into_descriptor(&self) -> SystemDescriptor {
-        Params1::print();
-        Params2::print();
+        P0::print();
+        P1::print();
 
-        SystemDescriptor {}
+        SystemDescriptor {
+            exclusive: P0::EXCLUSIVE || P1::EXCLUSIVE,
+        }
     }
 }
 
-pub struct SystemDescriptor {}
+#[derive(Debug)]
+pub struct SystemDescriptor {
+    exclusive: bool,
+}

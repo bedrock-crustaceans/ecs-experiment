@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod test;
 
+mod event;
 mod query;
 mod resource;
 mod system;

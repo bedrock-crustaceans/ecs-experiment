@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use crate::{
-    query::{Query, Res},
-    resource::Resource,
+    query::Query,
+    resource::{Res, ResMut, Resource},
     system::{IntoSystemDescriptor, SystemDescriptor},
     Component, Filter,
 };
@@ -33,7 +33,7 @@ impl Resource for TestResource {}
 
 fn test_input<Params>(system: impl IntoSystemDescriptor<Params>) {
     let descriptor = system.into_descriptor();
-    println!();
+    println!("{descriptor:?}");
 }
 
 fn test_system(query: Query<&TestComponent, TestFilter<TestComponent>>) {}
@@ -50,7 +50,7 @@ fn tuple_test_system2(
 ) {
 }
 
-fn res_test_system(query: Query<&TestComponent>, res: Res<TestResource>) {}
+fn res_test_system(query: Query<&TestComponent>, res: ResMut<TestResource>) {}
 
 #[test]
 fn test() {
