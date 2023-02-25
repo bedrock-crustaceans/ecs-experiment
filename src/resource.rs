@@ -1,3 +1,1 @@
-pub trait Resource {
-    
-}
+pub trait Resource {}

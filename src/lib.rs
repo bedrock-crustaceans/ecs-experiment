@@ -1,14 +1,10 @@
 #[cfg(test)]
 mod test;
 
-mod resource;
 mod query;
+mod resource;
 mod system;
 
-pub trait Component {
+pub trait Component {}
 
-}
-
-pub trait Filter {
-
-}
+pub trait Filter {}
