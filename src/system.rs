@@ -6,34 +6,19 @@ use crate::{
     resource::{Res, ResMut, Resource},
 };
 
-pub trait System {
-    fn print(&self);
-}
+pub trait SystemParamBundle: Sized {}
 
-pub trait SystemParamBundle {
-    fn print();
-}
-
-impl<P> SystemParamBundle for P
-where
-    P: SystemParam,
-{
-    fn print() {
-        println!("This collection has 1 parameter");
-        dbg!(std::any::type_name::<P>());
-    }
-}
+impl<P0> SystemParamBundle for P0 where P0: SystemParam {}
 
 impl<P0, P1> SystemParamBundle for (P0, P1)
 where
     P0: SystemParam,
     P1: SystemParam,
 {
-    fn print() {
-        println!("This collection has 2 parameters");
-        dbg!(std::any::type_name::<P0>());
-        dbg!(std::any::type_name::<P1>());
-    }
+}
+
+pub trait System {
+    fn call(&self);
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
@@ -42,9 +27,26 @@ pub struct GenericSystem<Params: SystemParamBundle, F: IntoSystem<Params>> {
     _marker: PhantomData<Params>,
 }
 
-impl<Params: SystemParamBundle, F: IntoSystem<Params>> System for GenericSystem<Params, F> {
-    fn print(&self) {
-        Params::print();
+impl<P0, F: Fn(P0)> System for GenericSystem<P0, F>
+where
+    P0: SystemParam,
+{
+    fn call(&self) {
+        // println!("1 parameter");
+        // dbg!(std::any::type_name::<P0>());
+        // (self.callable)(P0::default());
+    }
+}
+
+impl<P0, P1, F: Fn(P0, P1)> System for GenericSystem<(P0, P1), F>
+where
+    P0: SystemParam,
+    P1: SystemParam,
+{
+    fn call(&self) {
+        // println!("2 parameters");
+        // dbg!(std::any::type_name::<(P0, P1)>());
+        // (self.callable)(P0::default(), P1::default());
     }
 }
 
@@ -73,7 +75,6 @@ impl<E: Event> SystemParam for EventReader<E> {
 }
 
 pub trait IntoSystem<Params: SystemParamBundle>: Sized {
-    // fn into_descriptor(self) -> SystemDescriptor<P, Self>;
     fn into_system(self) -> GenericSystem<Params, Self> {
         GenericSystem {
             callable: self,
@@ -82,39 +83,11 @@ pub trait IntoSystem<Params: SystemParamBundle>: Sized {
     }
 }
 
-impl<F, P: SystemParam> IntoSystem<P> for F
-where
-    F: Fn(P),
-{
-    // fn into_descriptor(self) -> SystemDescriptor<P, F> {
-    //     SystemDescriptor {
-    //         system: GenericSystem {
-    //             callable: self,
-    //             _marker: PhantomData,
-    //         },
-    //         exclusive: P::EXCLUSIVE,
-    //     }
-    // }
-}
-
+impl<F, P0: SystemParam> IntoSystem<P0> for F where F: Fn(P0) {}
 impl<F, P0, P1> IntoSystem<(P0, P1)> for F
 where
     F: Fn(P0, P1),
     P0: SystemParam,
     P1: SystemParam,
 {
-    // fn into_descriptor(self) -> SystemDescriptor<(P0, P1), F> {
-    //     SystemDescriptor {
-    //         system: GenericSystem {
-    //             callable: self,
-    //             _marker: PhantomData,
-    //         },
-    //         exclusive: P0::EXCLUSIVE || P1::EXCLUSIVE,
-    //     }
-    // }
 }
-
-// pub struct SystemDescriptor<Params: SystemParamBundle, F: IntoSystem<Params>> {
-//     pub system: GenericSystem<Params, F>,
-//     exclusive: bool,
-// }

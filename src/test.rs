@@ -4,7 +4,7 @@ use crate::{
     query::Query,
     resource::{ResMut, Resource},
     world::Systems,
-    Component, Filter,
+    Component, Filter, IntoSystem,
 };
 
 pub struct TestComponent;
@@ -58,9 +58,11 @@ fn res_test_system(query: Query<&TestComponent>, res: ResMut<TestResource>) {}
 fn test() {
     let mut systems = Systems::new();
 
-    systems.push(test_system);
-    systems.push(mut_test_system);
-    systems.push(tuple_test_system);
-    systems.push(tuple_test_system2);
-    systems.push(res_test_system);
+    systems.push(test_system.into_system());
+    systems.push(mut_test_system.into_system());
+    systems.push(tuple_test_system.into_system());
+    systems.push(tuple_test_system2.into_system());
+    systems.push(res_test_system.into_system());
+
+    systems.call();
 }
