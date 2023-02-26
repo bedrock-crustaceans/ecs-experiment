@@ -1,11 +1,11 @@
 use std::num::NonZeroUsize;
 
-use crate::system::System;
+use crate::system::{IntoSystem, System, SystemDescriptor, SystemParamCollection};
 
 pub struct Entity(NonZeroUsize);
 
 pub struct Entities {
-    storage: Vec<Option<Entity>>
+    storage: Vec<Option<Entity>>,
 }
 
 impl Entities {
@@ -17,37 +17,45 @@ impl Entities {
 impl Default for Entities {
     fn default() -> Entities {
         Entities {
-            storage: Vec::new()
+            storage: Vec::new(),
         }
     }
 }
 
-pub struct Components {
-
-}
+pub struct Components {}
 
 impl Default for Components {
     fn default() -> Components {
-        Components {
-
-        }
+        Components {}
     }
 }
 
 pub struct Systems {
-    storage: Vec<Box<dyn System>>
+    storage: Vec<Box<dyn System>>,
 }
 
 impl Systems {
     pub fn new() -> Systems {
         Systems::default()
     }
+
+    pub fn insert<Params, S>(&mut self, system: SystemDescriptor<Params, S>)
+    where
+        Params: SystemParamCollection + 'static,
+        S: IntoSystem<Params> + 'static,
+    {
+        self.storage.push(Box::new(system.system));
+    }
+
+    pub fn print_all(&self) {
+        self.storage.iter().for_each(|s| s.print());
+    }
 }
 
 impl Default for Systems {
     fn default() -> Systems {
         Systems {
-            storage: Vec::new()
+            storage: Vec::new(),
         }
     }
 }
@@ -55,7 +63,7 @@ impl Default for Systems {
 pub struct World {
     entities: Entities,
     components: Components,
-    systems: Systems
+    systems: Systems,
 }
 
 impl World {

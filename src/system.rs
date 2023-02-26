@@ -14,7 +14,10 @@ pub trait SystemParamCollection {
     fn print();
 }
 
-impl<P> SystemParamCollection for P where P: SystemParam {
+impl<P> SystemParamCollection for P
+where
+    P: SystemParam,
+{
     fn print() {
         println!("This collection has 1 parameter");
         dbg!(std::any::type_name::<P>());
@@ -23,7 +26,8 @@ impl<P> SystemParamCollection for P where P: SystemParam {
 
 impl<P0, P1> SystemParamCollection for (P0, P1)
 where
-    P0: SystemParam, P1: SystemParam
+    P0: SystemParam,
+    P1: SystemParam,
 {
     fn print() {
         println!("This collection has 2 parameters");
@@ -32,11 +36,12 @@ where
     }
 }
 
-pub struct BoxedSystem<Params: SystemParamCollection> {
-    callable: Box<dyn IntoSystem<Params>>
+pub struct BoxedSystem<Params: SystemParamCollection, F: IntoSystem<Params>> {
+    pub callable: F,
+    _marker: PhantomData<Params>,
 }
 
-impl<Params: SystemParamCollection> System for BoxedSystem<Params> {
+impl<Params: SystemParamCollection, F: IntoSystem<Params>> System for BoxedSystem<Params, F> {
     fn print(&self) {
         Params::print();
     }
@@ -66,22 +71,21 @@ impl<E: Event> SystemParam for EventReader<E> {
     const EXCLUSIVE: bool = false;
 }
 
-pub trait IntoSystem<P: SystemParamCollection> {
-    fn into_descriptor(self) -> SystemDescriptor<P>;
+pub trait IntoSystem<P: SystemParamCollection>: Sized {
+    fn into_descriptor(self) -> SystemDescriptor<P, Self>;
 }
 
 impl<F, P: SystemParam> IntoSystem<P> for F
 where
     F: Fn(P) + 'static,
 {
-    fn into_descriptor(self) -> SystemDescriptor<P> {
-        P::print();
-
+    fn into_descriptor(self) -> SystemDescriptor<P, F> {
         SystemDescriptor {
             system: BoxedSystem {
-                callable: Box::new(self)
+                callable: self,
+                _marker: PhantomData,
             },
-            exclusive: P::EXCLUSIVE
+            exclusive: P::EXCLUSIVE,
         }
     }
 }
@@ -92,20 +96,18 @@ where
     P0: SystemParam,
     P1: SystemParam,
 {
-    fn into_descriptor(self) -> SystemDescriptor<(P0, P1)> {
-        <(P0, P1)>::print();
-        // P1::print();
-
+    fn into_descriptor(self) -> SystemDescriptor<(P0, P1), F> {
         SystemDescriptor {
             system: BoxedSystem {
-                callable: Box::new(self)
+                callable: self,
+                _marker: PhantomData,
             },
-            exclusive: P0::EXCLUSIVE || P1::EXCLUSIVE
+            exclusive: P0::EXCLUSIVE || P1::EXCLUSIVE,
         }
     }
 }
 
-pub struct SystemDescriptor<Params: SystemParamCollection> {
-    system: BoxedSystem<Params>,
-    exclusive: bool
+pub struct SystemDescriptor<Params: SystemParamCollection, F: IntoSystem<Params>> {
+    pub system: BoxedSystem<Params, F>,
+    exclusive: bool,
 }
