@@ -44,6 +44,13 @@ impl Entities {
         debug_assert_ne!(id, 0);
         Entity(unsafe { NonZeroUsize::new_unchecked(id) })
     }
+
+    pub fn destroy(&mut self, entity: Entity) -> bool {
+        let mut current = false;
+        std::mem::swap(&mut self.storage[entity.0.get()], &mut current);
+
+        current
+    }
 }
 
 impl Default for Entities {
@@ -60,11 +67,12 @@ pub trait GenericStorage<C: Component> {
 
 pub trait Storage {
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn remove(&mut self, entity: Entity);
 }
 
 pub struct ComponentStorage<C: Component> {
     entity_indices: HashMap<Entity, usize>,
-    storage: Vec<C>,
+    storage: Vec<Option<C>>,
 }
 
 impl<C: Component> ComponentStorage<C> {
@@ -75,8 +83,19 @@ impl<C: Component> ComponentStorage<C> {
 
 impl<C: Component> GenericStorage<C> for ComponentStorage<C> {
     fn push(&mut self, entity: Entity, component: C) {
-        self.entity_indices.insert(entity, self.storage.len());
-        self.storage.push(component);
+        let possible_gap =
+            self.storage
+                .iter()
+                .enumerate()
+                .find_map(|(i, c)| if c.is_none() { Some(i) } else { None });
+
+        if let Some(gap) = possible_gap {
+            self.entity_indices.insert(entity, gap);
+            self.storage[gap] = Some(component);
+        } else {
+            self.entity_indices.insert(entity, self.storage.len());
+            self.storage.push(Some(component));
+        }
     }
 }
 
@@ -92,6 +111,12 @@ impl<C: Component> Default for ComponentStorage<C> {
 impl<C: Component + 'static> Storage for ComponentStorage<C> {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn remove(&mut self, entity: Entity) {
+        if let Some(index) = self.entity_indices.remove(&entity) {
+            self.storage[index] = None;
+        }
     }
 }
 
@@ -117,6 +142,10 @@ impl Components {
             unreachable!();
         }
     }
+
+    pub fn remove_all(&mut self, entity: Entity) {
+        self.storage.iter_mut().for_each(|s| s.1.remove(entity));
+    }
 }
 
 impl Default for Components {
@@ -140,8 +169,8 @@ impl Systems {
         self.storage.push(Box::new(system));
     }
 
-    pub fn call(&self) {
-        self.storage.iter().for_each(|s| s.call());
+    pub fn call(&self, world: &World) {
+        self.storage.iter().for_each(|s| s.call(world));
     }
 }
 
@@ -183,7 +212,8 @@ impl World {
     }
 
     pub fn despawn(&mut self, entity: Entity) -> bool {
-        todo!()
+        self.components.remove_all(entity);
+        self.entities.destroy(entity)
     }
 }
 

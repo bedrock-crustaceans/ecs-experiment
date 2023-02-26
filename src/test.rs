@@ -4,7 +4,7 @@ use crate::{
     query::Query,
     resource::{ResMut, Resource},
     world::Systems,
-    Component, Filter, IntoSystem,
+    Component, Filter, IntoSystem, World,
 };
 
 pub struct TestComponent;
@@ -31,13 +31,6 @@ pub struct TestResource {}
 
 impl Resource for TestResource {}
 
-// fn test_input<Params: SystemParamBundle, S: IntoSystem<Params>>(
-//     system: S,
-// ) -> SystemDescriptor<Params, S> {
-//     system.into_descriptor()
-//     // println!("{descriptor:?}");
-// }
-
 fn test_system(query: Query<&TestComponent, TestFilter<TestComponent>>) {}
 
 fn mut_test_system(mut query: Query<&mut TestComponent, TestFilter<TestComponent>>) {}
@@ -56,13 +49,13 @@ fn res_test_system(query: Query<&TestComponent>, res: ResMut<TestResource>) {}
 
 #[test]
 fn test() {
-    let mut systems = Systems::new();
+    let mut world = World::new();
 
-    systems.push(test_system.into_system());
-    systems.push(mut_test_system.into_system());
-    systems.push(tuple_test_system.into_system());
-    systems.push(tuple_test_system2.into_system());
-    systems.push(res_test_system.into_system());
+    world.system(test_system.into_system());
+    world.system(mut_test_system.into_system());
+    world.system(tuple_test_system.into_system());
+    world.system(tuple_test_system2.into_system());
+    world.system(res_test_system.into_system());
 
-    systems.call();
+    world.execute();
 }

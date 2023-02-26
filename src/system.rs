@@ -4,7 +4,7 @@ use crate::{
     event::{Event, EventReader, EventWriter},
     query::{FilterBundle, InsertionBundle, Query},
     resource::{Res, ResMut, Resource},
-    QueryBundle,
+    QueryBundle, World,
 };
 
 pub trait SystemParamBundle: Sized {}
@@ -19,7 +19,7 @@ where
 }
 
 pub trait System {
-    fn call(&self);
+    fn call(&self, world: &World);
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
@@ -32,7 +32,7 @@ impl<P0, F: Fn(P0)> System for GenericSystem<P0, F>
 where
     P0: SystemParam,
 {
-    fn call(&self) {
+    fn call(&self, world: &World) {
         // println!("1 parameter");
         // dbg!(std::any::type_name::<P0>());
         // (self.callable)(P0::default());
@@ -44,7 +44,7 @@ where
     P0: SystemParam,
     P1: SystemParam,
 {
-    fn call(&self) {
+    fn call(&self, world: &World) {
         // println!("2 parameters");
         // dbg!(std::any::type_name::<(P0, P1)>());
         // (self.callable)(P0::default(), P1::default());
