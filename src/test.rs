@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     query::Query,
     resource::{Res, ResMut, Resource},
-    system::{IntoSystemDescriptor, SystemDescriptor},
+    system::{IntoSystem, SystemDescriptor, SystemParamCollection},
     Component, Filter,
 };
 
@@ -31,9 +31,9 @@ pub struct TestResource {}
 
 impl Resource for TestResource {}
 
-fn test_input<Params>(system: impl IntoSystemDescriptor<Params>) {
+fn test_input<Params: SystemParamCollection>(system: impl IntoSystem<Params> + 'static) {
     let descriptor = system.into_descriptor();
-    println!("{descriptor:?}");
+    // println!("{descriptor:?}");
 }
 
 fn test_system(query: Query<&TestComponent, TestFilter<TestComponent>>) {}
