@@ -2,8 +2,7 @@ use std::marker::PhantomData;
 
 use crate::{
     query::Query,
-    resource::{Res, ResMut, Resource},
-    system::{IntoSystem, SystemDescriptor, SystemParamCollection},
+    resource::{ResMut, Resource},
     world::Systems,
     Component, Filter,
 };
@@ -32,12 +31,12 @@ pub struct TestResource {}
 
 impl Resource for TestResource {}
 
-fn test_input<Params: SystemParamCollection, S: IntoSystem<Params>>(
-    system: S,
-) -> SystemDescriptor<Params, S> {
-    system.into_descriptor()
-    // println!("{descriptor:?}");
-}
+// fn test_input<Params: SystemParamBundle, S: IntoSystem<Params>>(
+//     system: S,
+// ) -> SystemDescriptor<Params, S> {
+//     system.into_descriptor()
+//     // println!("{descriptor:?}");
+// }
 
 fn test_system(query: Query<&TestComponent, TestFilter<TestComponent>>) {}
 
@@ -59,17 +58,9 @@ fn res_test_system(query: Query<&TestComponent>, res: ResMut<TestResource>) {}
 fn test() {
     let mut systems = Systems::new();
 
-    let desc1 = test_input(test_system);
-    let desc2 = test_input(mut_test_system);
-    let desc3 = test_input(tuple_test_system);
-    let desc4 = test_input(tuple_test_system2);
-    let desc5 = test_input(res_test_system);
-
-    systems.insert(desc1);
-    systems.insert(desc2);
-    systems.insert(desc3);
-    systems.insert(desc4);
-    systems.insert(desc5);
-
-    systems.print_all();
+    systems.push(test_system);
+    systems.push(mut_test_system);
+    systems.push(tuple_test_system);
+    systems.push(tuple_test_system2);
+    systems.push(res_test_system);
 }

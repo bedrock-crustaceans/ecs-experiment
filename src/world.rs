@@ -1,6 +1,6 @@
 use std::num::NonZeroUsize;
 
-use crate::system::{IntoSystem, System, SystemDescriptor, SystemParamCollection};
+use crate::system::{IntoSystem, System, SystemParamBundle};
 
 pub struct Entity(NonZeroUsize);
 
@@ -39,16 +39,11 @@ impl Systems {
         Systems::default()
     }
 
-    pub fn insert<Params, S>(&mut self, system: SystemDescriptor<Params, S>)
+    pub fn push<Params>(&mut self, system: impl IntoSystem<Params> + 'static)
     where
-        Params: SystemParamCollection + 'static,
-        S: IntoSystem<Params> + 'static,
+        Params: SystemParamBundle + 'static,
     {
-        self.storage.push(Box::new(system.system));
-    }
-
-    pub fn print_all(&self) {
-        self.storage.iter().for_each(|s| s.print());
+        self.storage.push(Box::new(system.into_system()));
     }
 }
 
