@@ -1,10 +1,15 @@
-use std::{any::TypeId, collections::HashMap, num::NonZeroUsize};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    num::NonZeroUsize,
+};
 
 use crate::{
     system::{IntoSystem, System, SystemParamBundle},
-    Component, ComponentBundle, GenericSystem,
+    Component, GenericSystem, InsertionBundle,
 };
 
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Entity(NonZeroUsize);
 
 pub struct EntityMut<'w> {
@@ -49,26 +54,75 @@ impl Default for Entities {
     }
 }
 
-pub trait GenericStorage<C: Component> {}
+pub trait GenericStorage<C: Component> {
+    fn push(&mut self, entity: Entity, component: C);
+}
 
-pub trait Storage {}
+pub trait Storage {
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
 
 pub struct ComponentStorage<C: Component> {
     entity_indices: HashMap<Entity, usize>,
     storage: Vec<C>,
 }
 
-impl<C: Component> GenericStorage<C> for ComponentStorage<C> {}
+impl<C: Component> ComponentStorage<C> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl<C: Component> GenericStorage<C> for ComponentStorage<C> {
+    fn push(&mut self, entity: Entity, component: C) {
+        self.entity_indices.insert(entity, self.storage.len());
+        self.storage.push(component);
+    }
+}
+
+impl<C: Component> Default for ComponentStorage<C> {
+    fn default() -> Self {
+        Self {
+            entity_indices: HashMap::new(),
+            storage: Vec::new(),
+        }
+    }
+}
+
+impl<C: Component + 'static> Storage for ComponentStorage<C> {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
 
 pub struct Components {
-    indices: HashMap<TypeId, usize>,
-    storage: Vec<Box<dyn Storage>>,
+    storage: HashMap<TypeId, Box<dyn Storage>>,
+}
+
+impl Components {
+    pub fn insert_bundle<B: InsertionBundle>(&mut self, entity: Entity, bundle: B) {
+        bundle.insert_into(self, entity);
+    }
+
+    pub fn insert<C: Component + 'static>(&mut self, entity: Entity, component: C) {
+        let entry = self
+            .storage
+            .entry(TypeId::of::<C>())
+            .or_insert_with(|| Box::new(ComponentStorage::<C>::new()));
+
+        let downcast = entry.as_any_mut().downcast_mut::<ComponentStorage<C>>();
+        if let Some(downcast) = downcast {
+            downcast.push(entity, component);
+        } else {
+            unreachable!();
+        }
+    }
 }
 
 impl Default for Components {
     fn default() -> Components {
         Components {
-            ..Default::default()
+            storage: HashMap::new(),
         }
     }
 }
@@ -110,9 +164,9 @@ impl World {
         World::default()
     }
 
-    pub fn spawn<B: ComponentBundle>(&mut self, bundle: B) -> EntityMut {
+    pub fn spawn<B: InsertionBundle>(&mut self, bundle: B) -> EntityMut {
         let entity = self.entities.alloc();
-        todo!("Component insert");
+        self.components.insert_bundle(entity, bundle);
 
         EntityMut {
             world: self,
@@ -136,7 +190,9 @@ impl World {
 impl Default for World {
     fn default() -> World {
         World {
-            ..Default::default()
+            entities: Entities::default(),
+            components: Components::default(),
+            systems: Systems::default(),
         }
     }
 }

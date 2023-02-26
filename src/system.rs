@@ -2,8 +2,9 @@ use std::marker::PhantomData;
 
 use crate::{
     event::{Event, EventReader, EventWriter},
-    query::{ComponentBundle, FilterBundle, Query},
+    query::{FilterBundle, InsertionBundle, Query},
     resource::{Res, ResMut, Resource},
+    QueryBundle,
 };
 
 pub trait SystemParamBundle: Sized {}
@@ -54,7 +55,7 @@ pub trait SystemParam {
     const EXCLUSIVE: bool;
 }
 
-impl<C: ComponentBundle, F: FilterBundle> SystemParam for Query<C, F> {
+impl<C: QueryBundle, F: FilterBundle> SystemParam for Query<C, F> {
     const EXCLUSIVE: bool = C::MUTABLE;
 }
 

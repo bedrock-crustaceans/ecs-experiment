@@ -1,25 +1,45 @@
 use std::marker::PhantomData;
 
-use crate::{Component, Filter};
+use crate::{Component, Components, Entity, Filter};
 
-pub trait ComponentBundle {
+pub trait InsertionBundle {
+    fn insert_into(self, components: &mut Components, entity: Entity);
+}
+
+impl<'a, C: Component> Component for &'a C {}
+impl<'a, C: Component> Component for &'a mut C {}
+
+impl<'a, C0: Component + 'static> InsertionBundle for C0 {
+    fn insert_into(self, components: &mut Components, entity: Entity) {
+        components.insert(entity, self);
+    }
+}
+
+impl<'a, C0, C1> InsertionBundle for (C0, C1)
+where
+    C0: Component + 'static,
+    C1: Component + 'static,
+{
+    fn insert_into(self, components: &mut Components, entity: Entity) {
+        components.insert(entity, self.0);
+        components.insert(entity, self.1);
+    }
+}
+
+pub trait QueryBundle {
     const MUTABLE: bool;
 }
 
-impl<'a, C: Component> ComponentBundle for &'a C {
+impl<'a, C0: Component> QueryBundle for C0 {
     const MUTABLE: bool = false;
 }
 
-impl<'a, C: Component> ComponentBundle for &'a mut C {
-    const MUTABLE: bool = true;
-}
-
-impl<'a, C0, C1> ComponentBundle for (C0, C1)
+impl<'a, C0, C1> QueryBundle for (C0, C1)
 where
-    C0: ComponentBundle,
-    C1: ComponentBundle,
+    C0: Component,
+    C1: Component,
 {
-    const MUTABLE: bool = C0::MUTABLE || C1::MUTABLE;
+    const MUTABLE: bool = <&C0>::MUTABLE || <&C1>::MUTABLE;
 }
 
 pub trait FilterBundle {}
@@ -35,7 +55,7 @@ where
 {
 }
 
-pub struct Query<C: ComponentBundle, F: FilterBundle = ()> {
+pub struct Query<C: QueryBundle, F: FilterBundle = ()> {
     collection: C,
     _marker: PhantomData<F>,
 }
