@@ -35,6 +35,15 @@ impl<'a> Iterator for EntityIter<'a> {
     }
 }
 
+impl<'a> From<&'a Entities> for EntityIter<'a> {
+    fn from(value: &'a Entities) -> EntityIter<'a> {
+        EntityIter {
+            entities: value,
+            index: 0,
+        }
+    }
+}
+
 pub struct Entities {
     storage: Vec<bool>,
 }
@@ -42,6 +51,10 @@ pub struct Entities {
 impl Entities {
     pub fn new() -> Entities {
         Entities::default()
+    }
+
+    pub fn iter(&self) -> EntityIter {
+        EntityIter::from(self)
     }
 
     pub fn alloc(&mut self) -> Entity {
@@ -201,8 +214,8 @@ impl Default for Systems {
 }
 
 pub struct World {
-    entities: Entities,
-    components: Components,
+    pub(crate) entities: Entities,
+    pub(crate) components: Components,
     systems: Systems,
 }
 

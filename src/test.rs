@@ -55,7 +55,7 @@ fn empty_system() {
 fn test() {
     let mut world = World::new();
 
-    // world.system(test_system);
+    world.system(test_system);
     // world.system(mut_test_system);
     // world.system(tuple_test_system);
     // world.system(tuple_test_system2);
