@@ -46,7 +46,7 @@ pub trait SystemParam {
     const EXCLUSIVE: bool;
 }
 
-impl<C: QueryBundle, F: FilterBundle> SystemParam for Query<C, F> {
+impl<'a, C: QueryBundle, F: FilterBundle> SystemParam for Query<'a, C, F> {
     const EXCLUSIVE: bool = C::MUTABLE;
 }
 

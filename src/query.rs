@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{Component, Components, Entity, Filter};
+use crate::{Component, Components, Entity, EntityIter, Filter};
 
 pub trait InsertionBundle {
     fn insert_into(self, components: &mut Components, entity: Entity);
@@ -26,12 +26,18 @@ where
     }
 }
 
-pub trait QueryBundle {
+pub trait QueryBundle: Sized {
     const MUTABLE: bool;
+
+    fn fetch<'a>(entity: Entity, components: &'a Components) -> Option<Self>;
 }
 
 impl<'a, C0: Component> QueryBundle for C0 {
     const MUTABLE: bool = false;
+
+    fn fetch<'b>(entity: Entity, components: &'b Components) -> Option<C0> {
+        None
+    }
 }
 
 impl<'a, C0, C1> QueryBundle for (C0, C1)
@@ -40,6 +46,10 @@ where
     C1: Component,
 {
     const MUTABLE: bool = <&C0>::MUTABLE || <&C1>::MUTABLE;
+
+    fn fetch<'b>(entity: Entity, components: &'b Components) -> Option<(C0, C1)> {
+        None
+    }
 }
 
 pub trait FilterBundle {}
@@ -55,7 +65,17 @@ where
 {
 }
 
-pub struct Query<C: QueryBundle, F: FilterBundle = ()> {
-    collection: C,
-    _marker: PhantomData<F>,
+pub struct Query<'a, C: QueryBundle, F: FilterBundle = ()> {
+    entities: EntityIter<'a>,
+    components: &'a Components,
+    _marker: PhantomData<(C, F)>,
+}
+
+impl<'a, C: QueryBundle, F: FilterBundle> Iterator for Query<'a, C, F> {
+    type Item = C;
+
+    fn next(&mut self) -> Option<C> {
+        let entity = self.entities.next()?;
+        C::fetch(entity, self.components)
+    }
 }

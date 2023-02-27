@@ -9,9 +9,30 @@ use crate::{Component, GenericSystem, InsertionBundle, RawSystem, System};
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Entity(NonZeroUsize);
 
-pub struct EntityMut<'w> {
-    world: &'w World,
+pub struct EntityMut<'a> {
+    world: &'a World,
     id: Entity,
+}
+
+pub struct EntityIter<'a> {
+    entities: &'a Entities,
+    index: usize,
+}
+
+impl<'a> Iterator for EntityIter<'a> {
+    type Item = Entity;
+
+    fn next(&mut self) -> Option<Entity> {
+        let nth = self
+            .entities
+            .storage
+            .iter()
+            .enumerate()
+            .find_map(|(i, e)| if *e { Some(i) } else { None })?;
+
+        self.index += nth + 1;
+        Some(Entity(NonZeroUsize::new(self.index + 1)?))
+    }
 }
 
 pub struct Entities {
