@@ -7,18 +7,12 @@ use crate::{
     QueryBundle, World,
 };
 
-pub trait SystemParamBundle: Sized {}
-
-impl SystemParamBundle for () {}
-impl<P0> SystemParamBundle for P0 where P0: SystemParam {}
-impl<P0, P1> SystemParamBundle for (P0, P1) where P0: SystemParam, P1: SystemParam {}
-
 pub trait System {
     fn call(&self, world: &World);
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct GenericSystem<Params: SystemParamBundle, F: RawSystem<Params>> {
+pub struct GenericSystem<Params, F: RawSystem<Params>> {
     callable: F,
     _marker: PhantomData<Params>,
 }
@@ -76,7 +70,13 @@ impl<E: Event> SystemParam for EventReader<E> {
     const EXCLUSIVE: bool = false;
 }
 
-pub trait IntoSystem<Params: SystemParamBundle>: Sized + RawSystem<Params> {
+pub trait SystemParamBundle: Sized {}
+
+impl SystemParamBundle for () {}
+impl<P0> SystemParamBundle for P0 where P0: SystemParam {}
+impl<P0, P1> SystemParamBundle for (P0, P1) where P0: SystemParam, P1: SystemParam {}
+
+pub trait IntoSystem<Params>: Sized + RawSystem<Params> {
     fn into_system(self) -> GenericSystem<Params, Self> {
         GenericSystem {
             callable: self,
@@ -85,11 +85,11 @@ pub trait IntoSystem<Params: SystemParamBundle>: Sized + RawSystem<Params> {
     }
 }
 
-impl<F> IntoSystem<()> for F where F: Fn() {}
-impl<F, P0> IntoSystem<P0> for F where F: Fn(P0), P0: SystemParam {}
-impl<F, P0, P1> IntoSystem<(P0, P1)> for F where F: Fn(P0, P1), P0: SystemParam, P1: SystemParam {}
+impl<F> IntoSystem<()> for F where F: RawSystem<()> {}
+impl<F, P0> IntoSystem<P0> for F where F: RawSystem<P0>, P0: SystemParam {}
+impl<F, P0, P1> IntoSystem<(P0, P1)> for F where F: RawSystem<(P0, P1)>, P0: SystemParam, P1: SystemParam {}
 
-pub trait RawSystem<P: SystemParamBundle> {}
+pub trait RawSystem<P> {}
 
 impl<F> RawSystem<()> for F where F: Fn() {}
 impl<F, P0> RawSystem<P0> for F where F: Fn(P0), P0: SystemParam {}

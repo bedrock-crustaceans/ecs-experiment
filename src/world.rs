@@ -216,7 +216,9 @@ impl World {
         self.entities.free(entity)
     }
 
-    pub fn system<Params: SystemParamBundle>(&mut self, system: impl IntoSystem<Params> + RawSystem<Params>) {
+    pub fn system<Params: 'static, S: RawSystem<Params> + IntoSystem<Params> + 'static>(&mut self, system: S)
+        where GenericSystem<Params, S>: System
+    {
         // let system = system.into_system();
         let boxed = Box::new(system.into_system()) as Box<dyn System>;
         self.systems.push(boxed);
