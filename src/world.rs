@@ -5,8 +5,8 @@ use std::{
 };
 
 use crate::{
-    system::{IntoSystem, System, SystemParamBundle},
-    Component, GenericSystem, InsertionBundle,
+    system::{IntoSystem, SystemParamBundle},
+    Component, GenericSystem, InsertionBundle, System, RawSystem,
 };
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -45,7 +45,7 @@ impl Entities {
         Entity(unsafe { NonZeroUsize::new_unchecked(id) })
     }
 
-    pub fn destroy(&mut self, entity: Entity) -> bool {
+    pub fn free(&mut self, entity: Entity) -> bool {
         let mut current = false;
         std::mem::swap(&mut self.storage[entity.0.get()], &mut current);
 
@@ -143,7 +143,7 @@ impl Components {
         }
     }
 
-    pub fn remove_all(&mut self, entity: Entity) {
+    pub fn remove_entity(&mut self, entity: Entity) {
         self.storage.iter_mut().for_each(|s| s.1.remove(entity));
     }
 }
@@ -165,8 +165,8 @@ impl Systems {
         Systems::default()
     }
 
-    pub fn push<S: System + 'static>(&mut self, system: S) {
-        self.storage.push(Box::new(system));
+    pub fn push(&mut self, system: Box<dyn System>) {
+        self.storage.push(system);
     }
 
     pub fn call(&self, world: &World) {
@@ -212,8 +212,18 @@ impl World {
     }
 
     pub fn despawn(&mut self, entity: Entity) -> bool {
-        self.components.remove_all(entity);
-        self.entities.destroy(entity)
+        self.components.remove_entity(entity);
+        self.entities.free(entity)
+    }
+
+    pub fn system<Params: SystemParamBundle>(&mut self, system: impl IntoSystem<Params> + RawSystem<Params>) {
+        // let system = system.into_system();
+        let boxed = Box::new(system.into_system()) as Box<dyn System>;
+        self.systems.push(boxed);
+    }
+
+    pub fn execute(&mut self) {
+        self.systems.storage.iter().for_each(|s| s.call(self));
     }
 }
 
