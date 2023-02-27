@@ -12,7 +12,7 @@ pub trait System {
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct GenericSystem<Params, F: RawSystem<Params>> {
+pub struct GenericSystem<Params, F: IntoSystem<Params>> {
     callable: F,
     _marker: PhantomData<Params>,
 }
@@ -23,7 +23,7 @@ impl<F: Fn()> System for GenericSystem<(), F> {
     }
 }
 
-impl<P0, F: RawSystem<P0>> System for GenericSystem<P0, F>
+impl<P0, F: IntoSystem<P0>> System for GenericSystem<P0, F>
 where
     P0: SystemParam,
 {
@@ -34,7 +34,7 @@ where
     }
 }
 
-impl<P0, P1, F: RawSystem<(P0, P1)>> System for GenericSystem<(P0, P1), F>
+impl<P0, P1, F: IntoSystem<(P0, P1)>> System for GenericSystem<(P0, P1), F>
 where
     P0: SystemParam,
     P1: SystemParam,
@@ -76,21 +76,15 @@ impl SystemParamBundle for () {}
 impl<P0> SystemParamBundle for P0 where P0: SystemParam {}
 impl<P0, P1> SystemParamBundle for (P0, P1) where P0: SystemParam, P1: SystemParam {}
 
-pub trait IntoSystem<Params>: Sized + RawSystem<Params> {
-    fn into_system(self) -> GenericSystem<Params, Self> {
-        GenericSystem {
-            callable: self,
-            _marker: PhantomData,
+pub trait IntoSystem<Params>: Sized {
+    fn into_generic(self) -> GenericSystem<Params, Self> {
+        GenericSystem { 
+            callable: self, 
+            _marker: PhantomData 
         }
     }
 }
 
-impl<F> IntoSystem<()> for F where F: RawSystem<()> {}
-impl<F, P0> IntoSystem<P0> for F where F: RawSystem<P0>, P0: SystemParam {}
-impl<F, P0, P1> IntoSystem<(P0, P1)> for F where F: RawSystem<(P0, P1)>, P0: SystemParam, P1: SystemParam {}
-
-pub trait RawSystem<P> {}
-
-impl<F> RawSystem<()> for F where F: Fn() {}
-impl<F, P0> RawSystem<P0> for F where F: Fn(P0), P0: SystemParam {}
-impl<F, P0, P1> RawSystem<(P0, P1)> for F where F: Fn(P0, P1), P0: SystemParam, P1: SystemParam {}
+impl<F> IntoSystem<()> for F where F: Fn() {}
+impl<F, P0> IntoSystem<P0> for F where F: Fn(P0), P0: SystemParam {}
+impl<F, P0, P1> IntoSystem<(P0, P1)> for F where F: Fn(P0, P1), P0: SystemParam, P1: SystemParam {}

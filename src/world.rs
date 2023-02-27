@@ -5,8 +5,7 @@ use std::{
 };
 
 use crate::{
-    system::{IntoSystem, SystemParamBundle},
-    Component, GenericSystem, InsertionBundle, System, RawSystem,
+    Component, GenericSystem, InsertionBundle, System, IntoSystem,
 };
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -216,11 +215,10 @@ impl World {
         self.entities.free(entity)
     }
 
-    pub fn system<Params: 'static, S: RawSystem<Params> + IntoSystem<Params> + 'static>(&mut self, system: S)
+    pub fn system<Params: 'static, S: IntoSystem<Params> + 'static>(&mut self, system: S)
         where GenericSystem<Params, S>: System
     {
-        // let system = system.into_system();
-        let boxed = Box::new(system.into_system()) as Box<dyn System>;
+        let boxed = Box::new(system.into_generic()) as Box<dyn System>;
         self.systems.push(boxed);
     }
 

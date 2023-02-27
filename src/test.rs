@@ -4,7 +4,7 @@ use crate::{
     query::Query,
     resource::{ResMut, Resource},
     world::Systems,
-    Component, Filter, IntoSystem, World, SystemParamBundle, SystemParam, System,
+    Component, Filter, World, SystemParamBundle, SystemParam, System,
 };
 
 pub struct TestComponent;
@@ -38,12 +38,8 @@ fn mut_test_system(mut query: Query<&mut TestComponent, TestFilter<TestComponent
 fn tuple_test_system(query: Query<(&TestComponent, &TestComponent2), TestFilter<TestComponent>>) {}
 
 fn tuple_test_system2(
-    query: Query<
-        (&TestComponent, &TestComponent2),
-        (TestFilter<TestComponent>, TestFilter2<TestComponent2>),
-    >
-) {
-}
+    query: Query<(&TestComponent, &TestComponent2), (TestFilter<TestComponent>, TestFilter2<TestComponent2>)>
+) {}
 
 fn res_test_system(query: Query<&TestComponent>, res: ResMut<TestResource>) {}
 
@@ -51,13 +47,11 @@ fn res_test_system(query: Query<&TestComponent>, res: ResMut<TestResource>) {}
 fn test() {
     let mut world = World::new();
 
-    // world.system(test_system.into_system());
-
     world.system(test_system);
-    // world.system(mut_test_system.into_system());
-    // world.system(tuple_test_system.into_system());
-    // world.system(tuple_test_system2.into_system());
-    // world.system(res_test_system.into_system());
+    world.system(mut_test_system);
+    world.system(tuple_test_system);
+    world.system(tuple_test_system2);
+    world.system(res_test_system);
 
     world.execute();
 }
