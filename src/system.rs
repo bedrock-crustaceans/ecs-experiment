@@ -66,17 +66,6 @@ impl<E: Event> SystemParam for EventReader<E> {
     const EXCLUSIVE: bool = false;
 }
 
-pub trait SystemParamBundle: Sized {}
-
-impl SystemParamBundle for () {}
-impl<P0> SystemParamBundle for P0 where P0: SystemParam {}
-impl<P0, P1> SystemParamBundle for (P0, P1)
-where
-    P0: SystemParam,
-    P1: SystemParam,
-{
-}
-
 pub trait RawSystem<Params>: Sized {
     fn into_generic(self) -> GenericSystem<Params, Self> {
         GenericSystem {

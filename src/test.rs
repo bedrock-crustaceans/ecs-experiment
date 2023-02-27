@@ -4,7 +4,7 @@ use crate::{
     query::Query,
     resource::{ResMut, Resource},
     world::Systems,
-    Component, Filter, System, SystemParam, SystemParamBundle, World,
+    Component, Filter, System, SystemParam, World,
 };
 
 pub struct TestComponent;
