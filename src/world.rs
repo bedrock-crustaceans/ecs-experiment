@@ -4,9 +4,7 @@ use std::{
     num::NonZeroUsize,
 };
 
-use crate::{
-    Component, GenericSystem, InsertionBundle, System, IntoSystem,
-};
+use crate::{Component, GenericSystem, InsertionBundle, RawSystem, System};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Entity(NonZeroUsize);
@@ -215,8 +213,9 @@ impl World {
         self.entities.free(entity)
     }
 
-    pub fn system<Params: 'static, S: IntoSystem<Params> + 'static>(&mut self, system: S)
-        where GenericSystem<Params, S>: System
+    pub fn system<Params: 'static, S: RawSystem<Params> + 'static>(&mut self, system: S)
+    where
+        GenericSystem<Params, S>: System,
     {
         let boxed = Box::new(system.into_generic()) as Box<dyn System>;
         self.systems.push(boxed);

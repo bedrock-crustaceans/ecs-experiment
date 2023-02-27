@@ -12,37 +12,33 @@ pub trait System {
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct GenericSystem<Params, F: IntoSystem<Params>> {
-    callable: F,
-    _marker: PhantomData<Params>,
+pub struct GenericSystem<Params, F: RawSystem<Params>> {
+    pub system: F,
+    pub phantom: PhantomData<Params>,
 }
 
-impl<F: Fn()> System for GenericSystem<(), F> {
+impl<F: RawSystem<()>> System for GenericSystem<(), F> {
     fn call(&self, world: &World) {
-        // do nothing
+        self.system.call(world);
     }
 }
 
-impl<P0, F: IntoSystem<P0>> System for GenericSystem<P0, F>
+impl<P0, F: RawSystem<P0>> System for GenericSystem<P0, F>
 where
     P0: SystemParam,
 {
     fn call(&self, world: &World) {
-        println!("1 parameter");
-        dbg!(std::any::type_name::<P0>());
-        // (self.callable)(P0::default());
+        self.system.call(world);
     }
 }
 
-impl<P0, P1, F: IntoSystem<(P0, P1)>> System for GenericSystem<(P0, P1), F>
+impl<P0, P1, F: RawSystem<(P0, P1)>> System for GenericSystem<(P0, P1), F>
 where
     P0: SystemParam,
     P1: SystemParam,
 {
     fn call(&self, world: &World) {
-        println!("2 parameters");
-        dbg!(std::any::type_name::<(P0, P1)>());
-        // (self.callable)(P0::default(), P1::default());
+        self.system.call(world);
     }
 }
 
@@ -74,17 +70,50 @@ pub trait SystemParamBundle: Sized {}
 
 impl SystemParamBundle for () {}
 impl<P0> SystemParamBundle for P0 where P0: SystemParam {}
-impl<P0, P1> SystemParamBundle for (P0, P1) where P0: SystemParam, P1: SystemParam {}
+impl<P0, P1> SystemParamBundle for (P0, P1)
+where
+    P0: SystemParam,
+    P1: SystemParam,
+{
+}
 
-pub trait IntoSystem<Params>: Sized {
+pub trait RawSystem<Params>: Sized {
     fn into_generic(self) -> GenericSystem<Params, Self> {
-        GenericSystem { 
-            callable: self, 
-            _marker: PhantomData 
+        GenericSystem {
+            system: self,
+            phantom: PhantomData,
         }
+    }
+
+    fn call(&self, world: &World);
+}
+
+impl<F> RawSystem<()> for F
+where
+    F: Fn(),
+{
+    fn call(&self, _world: &World) {
+        self();
     }
 }
 
-impl<F> IntoSystem<()> for F where F: Fn() {}
-impl<F, P0> IntoSystem<P0> for F where F: Fn(P0), P0: SystemParam {}
-impl<F, P0, P1> IntoSystem<(P0, P1)> for F where F: Fn(P0, P1), P0: SystemParam, P1: SystemParam {}
+impl<F, P0> RawSystem<P0> for F
+where
+    F: Fn(P0),
+    P0: SystemParam,
+{
+    fn call(&self, world: &World) {
+        todo!();
+    }
+}
+
+impl<F, P0, P1> RawSystem<(P0, P1)> for F
+where
+    F: Fn(P0, P1),
+    P0: SystemParam,
+    P1: SystemParam,
+{
+    fn call(&self, world: &World) {
+        todo!();
+    }
+}
