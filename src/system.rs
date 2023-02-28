@@ -12,18 +12,18 @@ pub trait System {
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct GenericSystem<Params, F: RawSystem<Params>> {
+pub struct SystemObject<Params, F: RawSystem<Params>> {
     pub system: F,
     pub phantom: PhantomData<Params>,
 }
 
-impl<F: RawSystem<()>> System for GenericSystem<(), F> {
+impl<F: RawSystem<()>> System for SystemObject<(), F> {
     fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-impl<P0, F: RawSystem<P0>> System for GenericSystem<P0, F>
+impl<P0, F: RawSystem<P0>> System for SystemObject<P0, F>
 where
     P0: SystemParam,
 {
@@ -32,7 +32,7 @@ where
     }
 }
 
-impl<P0, P1, F: RawSystem<(P0, P1)>> System for GenericSystem<(P0, P1), F>
+impl<P0, P1, F: RawSystem<(P0, P1)>> System for SystemObject<(P0, P1), F>
 where
     P0: SystemParam,
     P1: SystemParam,
@@ -49,7 +49,8 @@ pub trait SystemParam {
 }
 
 impl<C: QueryBundle, F: FilterBundle> SystemParam for Query<C, F> {
-    const EXCLUSIVE: bool = C::MUTABLE;
+    // const EXCLUSIVE: bool = C::EX;
+    const EXCLUSIVE: bool = true;
 
     fn fetch(world: Arc<World>) -> Self {
         Query::new(world)
@@ -60,7 +61,7 @@ impl<'a, R: Resource> SystemParam for Res<'a, R> {
     const EXCLUSIVE: bool = false;
 
     fn fetch(world: Arc<World>) -> Self {
-        todo!()
+        todo!();
     }
 }
 
@@ -68,7 +69,7 @@ impl<'a, R: Resource> SystemParam for ResMut<'a, R> {
     const EXCLUSIVE: bool = true;
 
     fn fetch(world: Arc<World>) -> Self {
-        todo!()
+        todo!();
     }
 }
 
@@ -76,7 +77,7 @@ impl<E: Event> SystemParam for EventWriter<E> {
     const EXCLUSIVE: bool = false;
 
     fn fetch(world: Arc<World>) -> Self {
-        todo!()
+        todo!();
     }
 }
 
@@ -84,13 +85,13 @@ impl<E: Event> SystemParam for EventReader<E> {
     const EXCLUSIVE: bool = false;
 
     fn fetch(world: Arc<World>) -> Self {
-        todo!()
+        todo!();
     }
 }
 
 pub trait RawSystem<Params>: Sized {
-    fn into_generic(self) -> GenericSystem<Params, Self> {
-        GenericSystem {
+    fn into_object(self) -> SystemObject<Params, Self> {
+        SystemObject {
             system: self,
             phantom: PhantomData,
         }

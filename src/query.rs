@@ -1,14 +1,38 @@
-use std::{any::TypeId, marker::PhantomData, sync::Arc};
+use std::{
+    any::{Any, TypeId},
+    marker::PhantomData,
+    sync::Arc,
+};
 
-use crate::{Component, ComponentStorage, Components, Entity, EntityIter, Filter, World};
+use crate::{
+    Component, ComponentStorage, Components, Entity, EntityIter, Filter, StorageFetch, World,
+};
+
+trait TyEq {}
+
+impl<T> TyEq for (T, T) {}
 
 pub trait InsertionBundle {
     fn insert_into(self, components: &Components, entity: Entity);
 }
 
-impl<'a, C: Component> Component for &'a C {}
+pub trait ComponentRef: Sized {
+    type NonRef: Component;
 
-impl<'a, C: Component> Component for &'a mut C {}
+    const SHARED: bool;
+}
+
+impl<'a, C: Component> ComponentRef for &'a C {
+    type NonRef = C;
+
+    const SHARED: bool = true;
+}
+
+impl<'a, C: Component> ComponentRef for &'a mut C {
+    type NonRef = C;
+
+    const SHARED: bool = false;
+}
 
 impl<'a, C0: Component + 'static> InsertionBundle for C0 {
     fn insert_into(self, components: &Components, entity: Entity) {
@@ -28,29 +52,35 @@ where
 }
 
 pub trait QueryBundle: Sized {
-    const MUTABLE: bool;
+    // const SHARED: bool;
 
-    fn fetch<'a, F: FilterBundle>(entity: Entity, components: &'a Components) -> Option<Self>;
+    type Output;
+
+    fn fetch<F: FilterBundle>(entity: Entity, components: &Components) -> Option<Self::Output>;
 }
 
-impl<'a, C0: Component> QueryBundle for C0 {
-    const MUTABLE: bool = false;
+impl<'a, C1: Component> QueryBundle for &'a C1 {
+    // const SHARED: bool = C1::SHARED;
 
-    fn fetch<'b, F: FilterBundle>(entity: Entity, components: &'b Components) -> Option<C0> {
-        todo!();
+    type Output = &'a C1;
 
-        None
+    fn fetch<F: FilterBundle>(entity: Entity, components: &Components) -> Option<&'a C1> {
+        let kv = components.storage.get(&C1::id())?;
+        kv.value().as_ref().fetch::<C1>()
+        // todo!();
     }
 }
 
 impl<'a, C0, C1> QueryBundle for (C0, C1)
 where
-    C0: Component,
-    C1: Component,
+    C0: QueryBundle,
+    C1: QueryBundle,
 {
-    const MUTABLE: bool = <&C0>::MUTABLE || <&C1>::MUTABLE;
+    // const SHARED: bool = C0::SHARED || C1::SHARED;
 
-    fn fetch<'b, F: FilterBundle>(entity: Entity, components: &'b Components) -> Option<(C0, C1)> {
+    type Output = (C0, C1);
+
+    fn fetch<'b, F: FilterBundle>(entity: Entity, components: &'b Components) -> Option<Self> {
         None
     }
 }
@@ -75,9 +105,9 @@ pub struct Query<C: QueryBundle, F: FilterBundle = ()> {
 }
 
 impl<C: QueryBundle, F: FilterBundle> Iterator for Query<C, F> {
-    type Item = C;
+    type Item = C::Output;
 
-    fn next(&mut self) -> Option<C> {
+    fn next(&mut self) -> Option<C::Output> {
         let entity = self.entity_iter.next()?;
         C::fetch::<F>(entity, &self.world.components)
     }

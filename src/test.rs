@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::Deref};
+use std::{any::TypeId, marker::PhantomData, ops::Deref};
 
 use crate::{
     query::Query,
@@ -12,11 +12,20 @@ pub struct TestComponent {
     pub message: &'static str,
 }
 
-impl Component for TestComponent {}
+impl Component for TestComponent {
+    fn id() -> TypeId {
+        TypeId::of::<TestComponent>()
+    }
+}
 
+#[derive(Debug)]
 pub struct TestComponent2 {}
 
-impl Component for TestComponent2 {}
+impl Component for TestComponent2 {
+    fn id() -> TypeId {
+        TypeId::of::<TestComponent>()
+    }
+}
 
 pub struct TestFilter<T> {
     _marker: PhantomData<T>,
@@ -40,7 +49,7 @@ fn test_system(query: Query<&TestComponent, TestFilter<TestComponent>>) {
     }
 }
 
-fn mut_test_system(mut query: Query<&mut TestComponent, TestFilter<TestComponent>>) {}
+// fn mut_test_system(mut query: Query<&mut TestComponent, TestFilter<TestComponent>>) {}
 
 fn tuple_test_system(query: Query<(&TestComponent, &TestComponent2), TestFilter<TestComponent>>) {}
 

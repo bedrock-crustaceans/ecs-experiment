@@ -15,6 +15,8 @@ pub use resource::*;
 pub use system::*;
 pub use world::*;
 
-pub trait Component: Send + Sync {}
+pub trait Component: Send + Sync {
+    fn id() -> TypeId;
+}
 
 pub trait Filter {}

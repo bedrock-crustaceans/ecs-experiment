@@ -1,6 +1,7 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    mem::MaybeUninit,
     num::NonZeroUsize,
     rc::Rc,
     sync::Arc,
@@ -9,7 +10,7 @@ use std::{
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
-use crate::{Component, GenericSystem, InsertionBundle, RawSystem, System};
+use crate::{Component, ComponentRef, InsertionBundle, RawSystem, System, SystemObject};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Entity(NonZeroUsize);
@@ -96,11 +97,25 @@ impl Default for Entities {
 
 pub trait GenericStorage<C: Component> {
     fn push(&self, entity: Entity, component: C);
+    fn fetch(&self, entity: Entity) -> Option<&C>;
 }
 
 pub trait Storage {
     fn as_any(&self) -> &dyn Any;
     fn remove(&self, entity: Entity);
+}
+
+pub trait StorageFetch {
+    fn fetch<C: Component>(&self) -> Option<&C>;
+}
+
+impl StorageFetch for &(dyn Storage + Send + Sync) {
+    fn fetch<C: Component>(&self) -> Option<&C> {
+        let obj = unsafe { MaybeUninit::<&C>::uninit().assume_init() };
+
+        // todo!();
+        Some(obj)
+    }
 }
 
 pub struct ComponentStorage<C: Component> {
@@ -130,6 +145,10 @@ impl<C: Component> GenericStorage<C> for ComponentStorage<C> {
             self.entity_indices.insert(entity, lock.len());
             lock.push(Some(component));
         }
+    }
+
+    fn fetch(&self, entity: Entity) -> Option<&C> {
+        todo!();
     }
 }
 
@@ -259,9 +278,9 @@ impl World {
     where
         Params: Send + Sync + 'static,
         Sys: RawSystem<Params> + Send + Sync + 'static,
-        GenericSystem<Params, Sys>: System,
+        SystemObject<Params, Sys>: System,
     {
-        let wrapped = Arc::new(system.into_generic());
+        let wrapped = Arc::new(system.into_object());
         self.systems.push(wrapped);
     }
 
