@@ -1,16 +1,17 @@
-use std::marker::PhantomData;
+use std::{any::TypeId, marker::PhantomData, sync::Arc};
 
-use crate::{Component, Components, Entity, EntityIter, Filter};
+use crate::{Component, ComponentStorage, Components, Entity, EntityIter, Filter, World};
 
 pub trait InsertionBundle {
-    fn insert_into(self, components: &mut Components, entity: Entity);
+    fn insert_into(self, components: &Components, entity: Entity);
 }
 
 impl<'a, C: Component> Component for &'a C {}
+
 impl<'a, C: Component> Component for &'a mut C {}
 
 impl<'a, C0: Component + 'static> InsertionBundle for C0 {
-    fn insert_into(self, components: &mut Components, entity: Entity) {
+    fn insert_into(self, components: &Components, entity: Entity) {
         components.insert(entity, self);
     }
 }
@@ -20,7 +21,7 @@ where
     C0: Component + 'static,
     C1: Component + 'static,
 {
-    fn insert_into(self, components: &mut Components, entity: Entity) {
+    fn insert_into(self, components: &Components, entity: Entity) {
         components.insert(entity, self.0);
         components.insert(entity, self.1);
     }
@@ -29,13 +30,15 @@ where
 pub trait QueryBundle: Sized {
     const MUTABLE: bool;
 
-    fn fetch<'a>(entity: Entity, components: &'a Components) -> Option<Self>;
+    fn fetch<'a, F: FilterBundle>(entity: Entity, components: &'a Components) -> Option<Self>;
 }
 
 impl<'a, C0: Component> QueryBundle for C0 {
     const MUTABLE: bool = false;
 
-    fn fetch<'b>(entity: Entity, components: &'b Components) -> Option<C0> {
+    fn fetch<'b, F: FilterBundle>(entity: Entity, components: &'b Components) -> Option<C0> {
+        todo!();
+
         None
     }
 }
@@ -47,7 +50,7 @@ where
 {
     const MUTABLE: bool = <&C0>::MUTABLE || <&C1>::MUTABLE;
 
-    fn fetch<'b>(entity: Entity, components: &'b Components) -> Option<(C0, C1)> {
+    fn fetch<'b, F: FilterBundle>(entity: Entity, components: &'b Components) -> Option<(C0, C1)> {
         None
     }
 }
@@ -65,17 +68,27 @@ where
 {
 }
 
-pub struct Query<'a, C: QueryBundle, F: FilterBundle = ()> {
-    entities: EntityIter<'a>,
-    components: &'a Components,
-    _marker: PhantomData<(C, F)>,
+pub struct Query<C: QueryBundle, F: FilterBundle = ()> {
+    entity_iter: EntityIter,
+    world: Arc<World>,
+    phantom: PhantomData<(C, F)>,
 }
 
-impl<'a, C: QueryBundle, F: FilterBundle> Iterator for Query<'a, C, F> {
+impl<C: QueryBundle, F: FilterBundle> Iterator for Query<C, F> {
     type Item = C;
 
     fn next(&mut self) -> Option<C> {
-        let entity = self.entities.next()?;
-        C::fetch(entity, self.components)
+        let entity = self.entity_iter.next()?;
+        C::fetch::<F>(entity, &self.world.components)
+    }
+}
+
+impl<C: QueryBundle, F: FilterBundle> Query<C, F> {
+    pub fn new(world: Arc<World>) -> Self {
+        Self {
+            entity_iter: EntityIter::new(world.clone()),
+            world,
+            phantom: PhantomData,
+        }
     }
 }

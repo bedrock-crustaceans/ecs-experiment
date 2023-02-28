@@ -1,14 +1,14 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
     event::{Event, EventReader, EventWriter},
     query::{FilterBundle, Query},
     resource::{Res, ResMut, Resource},
-    QueryBundle, World,
+    Components, EntityIter, QueryBundle, World,
 };
 
 pub trait System {
-    fn call(&self, world: &World);
+    fn call(&self, world: Arc<World>);
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
@@ -18,7 +18,7 @@ pub struct GenericSystem<Params, F: RawSystem<Params>> {
 }
 
 impl<F: RawSystem<()>> System for GenericSystem<(), F> {
-    fn call(&self, world: &World) {
+    fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
@@ -27,7 +27,7 @@ impl<P0, F: RawSystem<P0>> System for GenericSystem<P0, F>
 where
     P0: SystemParam,
 {
-    fn call(&self, world: &World) {
+    fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
@@ -37,33 +37,55 @@ where
     P0: SystemParam,
     P1: SystemParam,
 {
-    fn call(&self, world: &World) {
+    fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
 pub trait SystemParam {
     const EXCLUSIVE: bool;
+
+    fn fetch(world: Arc<World>) -> Self;
 }
 
-impl<'a, C: QueryBundle, F: FilterBundle> SystemParam for Query<'a, C, F> {
+impl<C: QueryBundle, F: FilterBundle> SystemParam for Query<C, F> {
     const EXCLUSIVE: bool = C::MUTABLE;
+
+    fn fetch(world: Arc<World>) -> Self {
+        Query::new(world)
+    }
 }
 
 impl<'a, R: Resource> SystemParam for Res<'a, R> {
     const EXCLUSIVE: bool = false;
+
+    fn fetch(world: Arc<World>) -> Self {
+        todo!()
+    }
 }
 
 impl<'a, R: Resource> SystemParam for ResMut<'a, R> {
     const EXCLUSIVE: bool = true;
+
+    fn fetch(world: Arc<World>) -> Self {
+        todo!()
+    }
 }
 
 impl<E: Event> SystemParam for EventWriter<E> {
     const EXCLUSIVE: bool = false;
+
+    fn fetch(world: Arc<World>) -> Self {
+        todo!()
+    }
 }
 
 impl<E: Event> SystemParam for EventReader<E> {
     const EXCLUSIVE: bool = false;
+
+    fn fetch(world: Arc<World>) -> Self {
+        todo!()
+    }
 }
 
 pub trait RawSystem<Params>: Sized {
@@ -74,14 +96,14 @@ pub trait RawSystem<Params>: Sized {
         }
     }
 
-    fn call(&self, world: &World);
+    fn call(&self, world: Arc<World>);
 }
 
 impl<F> RawSystem<()> for F
 where
     F: Fn(),
 {
-    fn call(&self, _world: &World) {
+    fn call(&self, _world: Arc<World>) {
         self();
     }
 }
@@ -91,8 +113,9 @@ where
     F: Fn(P0),
     P0: SystemParam,
 {
-    fn call(&self, world: &World) {
-        todo!();
+    fn call(&self, world: Arc<World>) {
+        let p0 = P0::fetch(world);
+        self(p0);
     }
 }
 
@@ -102,7 +125,9 @@ where
     P0: SystemParam,
     P1: SystemParam,
 {
-    fn call(&self, world: &World) {
-        todo!();
+    fn call(&self, world: Arc<World>) {
+        let p0 = P0::fetch(world.clone());
+        let p1 = P1::fetch(world);
+        self(p0, p1);
     }
 }

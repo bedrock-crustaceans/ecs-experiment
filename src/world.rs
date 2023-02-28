@@ -2,7 +2,12 @@ use std::{
     any::{Any, TypeId},
     collections::HashMap,
     num::NonZeroUsize,
+    rc::Rc,
+    sync::Arc,
 };
+
+use dashmap::DashMap;
+use parking_lot::RwLock;
 
 use crate::{Component, GenericSystem, InsertionBundle, RawSystem, System};
 
@@ -14,18 +19,23 @@ pub struct EntityMut<'a> {
     id: Entity,
 }
 
-pub struct EntityIter<'a> {
-    entities: &'a Entities,
+pub struct EntityIter {
+    world: Arc<World>,
     index: usize,
 }
 
-impl<'a> Iterator for EntityIter<'a> {
+impl EntityIter {
+    pub fn new(world: Arc<World>) -> Self {
+        EntityIter { world, index: 0 }
+    }
+}
+
+impl Iterator for EntityIter {
     type Item = Entity;
 
     fn next(&mut self) -> Option<Entity> {
-        let nth = self
-            .entities
-            .storage
+        let lock = self.world.entities.storage.read();
+        let nth = lock
             .iter()
             .enumerate()
             .find_map(|(i, e)| if *e { Some(i) } else { None })?;
@@ -36,7 +46,7 @@ impl<'a> Iterator for EntityIter<'a> {
 }
 
 pub struct Entities {
-    storage: Vec<bool>,
+    storage: RwLock<Vec<bool>>,
 }
 
 impl Entities {
@@ -44,28 +54,33 @@ impl Entities {
         Entities::default()
     }
 
-    pub fn alloc(&mut self) -> Entity {
-        let possible_gap =
-            self.storage
+    pub fn alloc(&self) -> Entity {
+        let id = {
+            let mut lock = self.storage.write();
+
+            let possible_gap = lock
                 .iter()
                 .enumerate()
                 .find_map(|(i, o)| if !o { Some(i) } else { None });
 
-        let id = if let Some(gap) = possible_gap {
-            self.storage[gap] = true;
-            gap + 1
-        } else {
-            self.storage.push(true);
-            self.storage.len()
+            if let Some(gap) = possible_gap {
+                lock[gap] = true;
+                gap + 1
+            } else {
+                lock.push(true);
+                lock.len()
+            }
         };
 
         debug_assert_ne!(id, 0);
         Entity(unsafe { NonZeroUsize::new_unchecked(id) })
     }
 
-    pub fn free(&mut self, entity: Entity) -> bool {
+    pub fn free(&self, entity: Entity) -> bool {
+        let mut lock = self.storage.write();
+
         let mut current = false;
-        std::mem::swap(&mut self.storage[entity.0.get()], &mut current);
+        std::mem::swap(&mut lock[entity.0.get()], &mut current);
 
         current
     }
@@ -74,23 +89,23 @@ impl Entities {
 impl Default for Entities {
     fn default() -> Entities {
         Entities {
-            storage: Vec::new(),
+            storage: RwLock::new(Vec::new()),
         }
     }
 }
 
 pub trait GenericStorage<C: Component> {
-    fn push(&mut self, entity: Entity, component: C);
+    fn push(&self, entity: Entity, component: C);
 }
 
 pub trait Storage {
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-    fn remove(&mut self, entity: Entity);
+    fn as_any(&self) -> &dyn Any;
+    fn remove(&self, entity: Entity);
 }
 
 pub struct ComponentStorage<C: Component> {
-    entity_indices: HashMap<Entity, usize>,
-    storage: Vec<Option<C>>,
+    entity_indices: DashMap<Entity, usize>,
+    storage: RwLock<Vec<Option<C>>>,
 }
 
 impl<C: Component> ComponentStorage<C> {
@@ -100,19 +115,20 @@ impl<C: Component> ComponentStorage<C> {
 }
 
 impl<C: Component> GenericStorage<C> for ComponentStorage<C> {
-    fn push(&mut self, entity: Entity, component: C) {
+    fn push(&self, entity: Entity, component: C) {
+        let mut lock = self.storage.write();
+
         let possible_gap =
-            self.storage
-                .iter()
+            lock.iter()
                 .enumerate()
                 .find_map(|(i, c)| if c.is_none() { Some(i) } else { None });
 
         if let Some(gap) = possible_gap {
             self.entity_indices.insert(entity, gap);
-            self.storage[gap] = Some(component);
+            lock[gap] = Some(component);
         } else {
-            self.entity_indices.insert(entity, self.storage.len());
-            self.storage.push(Some(component));
+            self.entity_indices.insert(entity, lock.len());
+            lock.push(Some(component));
         }
     }
 }
@@ -120,40 +136,40 @@ impl<C: Component> GenericStorage<C> for ComponentStorage<C> {
 impl<C: Component> Default for ComponentStorage<C> {
     fn default() -> Self {
         Self {
-            entity_indices: HashMap::new(),
-            storage: Vec::new(),
+            entity_indices: DashMap::new(),
+            storage: RwLock::new(Vec::new()),
         }
     }
 }
 
 impl<C: Component + 'static> Storage for ComponentStorage<C> {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn remove(&mut self, entity: Entity) {
+    fn remove(&self, entity: Entity) {
         if let Some(index) = self.entity_indices.remove(&entity) {
-            self.storage[index] = None;
+            self.storage.write()[index.1] = None;
         }
     }
 }
 
 pub struct Components {
-    storage: HashMap<TypeId, Box<dyn Storage>>,
+    pub(crate) storage: DashMap<TypeId, Arc<dyn Storage + Send + Sync>>,
 }
 
 impl Components {
-    pub fn insert_bundle<B: InsertionBundle>(&mut self, entity: Entity, bundle: B) {
+    pub fn insert_bundle<B: InsertionBundle>(&self, entity: Entity, bundle: B) {
         bundle.insert_into(self, entity);
     }
 
-    pub fn insert<C: Component + 'static>(&mut self, entity: Entity, component: C) {
+    pub fn insert<C: Component + 'static>(&self, entity: Entity, component: C) {
         let entry = self
             .storage
             .entry(TypeId::of::<C>())
-            .or_insert_with(|| Box::new(ComponentStorage::<C>::new()));
+            .or_insert_with(|| Arc::new(ComponentStorage::<C>::new()));
 
-        let downcast = entry.as_any_mut().downcast_mut::<ComponentStorage<C>>();
+        let downcast = entry.as_any().downcast_ref::<ComponentStorage<C>>();
         if let Some(downcast) = downcast {
             downcast.push(entity, component);
         } else {
@@ -161,21 +177,23 @@ impl Components {
         }
     }
 
-    pub fn remove_entity(&mut self, entity: Entity) {
-        self.storage.iter_mut().for_each(|s| s.1.remove(entity));
+    pub fn remove_entity(&self, entity: Entity) {
+        self.storage
+            .iter_mut()
+            .for_each(|s| s.value().remove(entity));
     }
 }
 
 impl Default for Components {
     fn default() -> Components {
         Components {
-            storage: HashMap::new(),
+            storage: DashMap::new(),
         }
     }
 }
 
 pub struct Systems {
-    storage: Vec<Box<dyn System>>,
+    storage: RwLock<Vec<Arc<dyn System + Send + Sync>>>,
 }
 
 impl Systems {
@@ -183,35 +201,38 @@ impl Systems {
         Systems::default()
     }
 
-    pub fn push(&mut self, system: Box<dyn System>) {
-        self.storage.push(system);
+    pub fn push(&self, system: Arc<dyn System + Send + Sync>) {
+        self.storage.write().push(system);
     }
 
-    pub fn call(&self, world: &World) {
-        self.storage.iter().for_each(|s| s.call(world));
+    pub fn call(&self, world: &Arc<World>) {
+        let lock = self.storage.read();
+        lock.iter().for_each(|sys| {
+            sys.call(Arc::clone(world));
+        });
     }
 }
 
 impl Default for Systems {
     fn default() -> Systems {
         Systems {
-            storage: Vec::new(),
+            storage: RwLock::new(Vec::new()),
         }
     }
 }
 
 pub struct World {
-    entities: Entities,
-    components: Components,
+    pub(crate) entities: Entities,
+    pub(crate) components: Components,
     systems: Systems,
 }
 
 impl World {
-    pub fn new() -> World {
-        World::default()
+    pub fn new() -> Arc<World> {
+        Arc::new(World::default())
     }
 
-    pub fn spawn<B: InsertionBundle>(&mut self, bundle: B) -> EntityMut {
+    pub fn spawn<B: InsertionBundle>(&self, bundle: B) -> EntityMut {
         let entity = self.entities.alloc();
         self.components.insert_bundle(entity, bundle);
 
@@ -221,7 +242,7 @@ impl World {
         }
     }
 
-    pub fn spawn_empty(&mut self) -> EntityMut {
+    pub fn spawn_empty(&self) -> EntityMut {
         let entity = self.entities.alloc();
         EntityMut {
             world: self,
@@ -229,21 +250,23 @@ impl World {
         }
     }
 
-    pub fn despawn(&mut self, entity: Entity) -> bool {
+    pub fn despawn(&self, entity: Entity) -> bool {
         self.components.remove_entity(entity);
         self.entities.free(entity)
     }
 
-    pub fn system<Params: 'static, S: RawSystem<Params> + 'static>(&mut self, system: S)
+    pub fn system<Params, Sys>(&self, system: Sys)
     where
-        GenericSystem<Params, S>: System,
+        Params: Send + Sync + 'static,
+        Sys: RawSystem<Params> + Send + Sync + 'static,
+        GenericSystem<Params, Sys>: System,
     {
-        let boxed = Box::new(system.into_generic()) as Box<dyn System>;
-        self.systems.push(boxed);
+        let wrapped = Arc::new(system.into_generic());
+        self.systems.push(wrapped);
     }
 
-    pub fn execute(&mut self) {
-        self.systems.storage.iter().for_each(|s| s.call(self));
+    pub fn execute(self: &Arc<Self>) {
+        self.systems.call(self);
     }
 }
 
