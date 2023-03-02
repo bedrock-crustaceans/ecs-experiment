@@ -1,11 +1,14 @@
 use std::{
     any::{Any, TypeId},
     marker::PhantomData,
-    sync::Arc,
+    sync::Arc, collections::HashMap,
 };
 
+use dashmap::mapref::one::Ref;
+use parking_lot::RwLockReadGuard;
+
 use crate::{
-    Component, ComponentStorage, Components, Entity, EntityIter, Filter, StorageFetch, World,
+    Component, ComponentStorage, Components, Entity, EntityIter, Filter, World, Storage, GenericStorage,
 };
 
 trait TyEq {}
@@ -16,23 +19,23 @@ pub trait InsertionBundle {
     fn insert_into(self, components: &Components, entity: Entity);
 }
 
-pub trait ComponentRef: Sized {
-    type NonRef: Component;
+// pub trait ComponentRef: Sized {
+//     type NonRef: Component;
 
-    const SHARED: bool;
-}
+//     const SHARED: bool;
+// }
 
-impl<'a, C: Component> ComponentRef for &'a C {
-    type NonRef = C;
+// impl<'a, C: Component> ComponentRef for &'a C {
+//     type NonRef = C;
 
-    const SHARED: bool = true;
-}
+//     const SHARED: bool = true;
+// }
 
-impl<'a, C: Component> ComponentRef for &'a mut C {
-    type NonRef = C;
+// impl<'a, C: Component> ComponentRef for &'a mut C {
+//     type NonRef = C;
 
-    const SHARED: bool = false;
-}
+//     const SHARED: bool = false;
+// }
 
 impl<'a, C0: Component + 'static> InsertionBundle for C0 {
     fn insert_into(self, components: &Components, entity: Entity) {
@@ -54,35 +57,44 @@ where
 pub trait QueryBundle: Sized {
     // const SHARED: bool;
 
-    type Output;
+    type NonRef;
 
-    fn fetch<F: FilterBundle>(entity: Entity, components: &Components) -> Option<Self::Output>;
+    // type Output<'b> where 'b: 'a;
+
+    // fn fetch<F: FilterBundle>(
+    //     entity: Entity, map: &'a HashMap<TypeId, Arc<dyn Storage + Send + Sync>>
+    // ) -> Option<Self::Output<'a>>;
 }
 
-impl<'a, C1: Component> QueryBundle for &'a C1 {
+impl<C1: Component> QueryBundle for &C1 {
     // const SHARED: bool = C1::SHARED;
 
-    type Output = &'a C1;
+    type NonRef = C1;
 
-    fn fetch<F: FilterBundle>(entity: Entity, components: &Components) -> Option<&'a C1> {
-        let kv = components.storage.get(&C1::id())?;
-        kv.value().as_ref().fetch::<C1>()
-        // todo!();
-    }
+    // type Output<'b> = &'a C1 where 'b: 'a;
+
+    // fn fetch<F: FilterBundle>(
+    //     entity: Entity, map: &'a HashMap<TypeId, Arc<dyn Storage + Send + Sync>>
+    // ) -> Option<Self::Output<'a>> {
+    //     // map.get(&C1::id())?.as_ref().fetch::<C1>()
+    //     todo!();
+    // }
 }
 
-impl<'a, C0, C1> QueryBundle for (C0, C1)
+impl<C0, C1> QueryBundle for (C0, C1)
 where
     C0: QueryBundle,
     C1: QueryBundle,
 {
+    type NonRef = (C0::NonRef, C1::NonRef);
+
     // const SHARED: bool = C0::SHARED || C1::SHARED;
 
-    type Output = (C0, C1);
+    // type Output<'b> = (C0, C1) where 'b: 'a;
 
-    fn fetch<'b, F: FilterBundle>(entity: Entity, components: &'b Components) -> Option<Self> {
-        None
-    }
+    // fn fetch<'b, F: FilterBundle>(entity: Entity, map: &'a HashMap<TypeId, Arc<dyn Storage + Send + Sync>>) -> Option<Self> {
+    //     todo!();
+    // }
 }
 
 pub trait FilterBundle {}
@@ -98,22 +110,33 @@ where
 {
 }
 
-pub struct Query<C: QueryBundle, F: FilterBundle = ()> {
+pub struct Query<'w, C: QueryBundle, F: FilterBundle = ()> {
     entity_iter: EntityIter,
     world: Arc<World>,
-    phantom: PhantomData<(C, F)>,
+    phantom: PhantomData<&'w (C, F)>,
 }
 
-impl<C: QueryBundle, F: FilterBundle> Iterator for Query<C, F> {
-    type Item = C::Output;
+impl<'a, C: Component + 'a, B, F: FilterBundle> Iterator for Query<'a, B, F> 
+    where B: QueryBundle<NonRef = C>
+{
+    type Item = &'a B::NonRef;
 
-    fn next(&mut self) -> Option<C::Output> {
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let lock = self.world.components.storage.read();
+        let storage = lock.get(&C::id())?;
+
         let entity = self.entity_iter.next()?;
-        C::fetch::<F>(entity, &self.world.components)
+        Some(unsafe {
+            &*(storage.fetch(entity)? as *const C)
+        })
+
+        // todo!();
+        // C::fetch::<F>(entity, &*self.world.as_ref().components.storage.read())
     }
 }
 
-impl<C: QueryBundle, F: FilterBundle> Query<C, F> {
+impl<'a, C: QueryBundle, F: FilterBundle> Query<'a, C, F> {
     pub fn new(world: Arc<World>) -> Self {
         Self {
             entity_iter: EntityIter::new(world.clone()),

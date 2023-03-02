@@ -19,4 +19,10 @@ pub trait Component: Send + Sync {
     fn id() -> TypeId;
 }
 
+impl<C: Component> Component for &C {
+    fn id() -> TypeId {
+        C::id()
+    }
+}
+
 pub trait Filter {}

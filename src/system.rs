@@ -48,7 +48,7 @@ pub trait SystemParam {
     fn fetch(world: Arc<World>) -> Self;
 }
 
-impl<C: QueryBundle, F: FilterBundle> SystemParam for Query<C, F> {
+impl<'a, C: QueryBundle, F: FilterBundle> SystemParam for Query<'a, C, F> {
     // const EXCLUSIVE: bool = C::EX;
     const EXCLUSIVE: bool = true;
 

@@ -1,16 +1,15 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    mem::MaybeUninit,
     num::NonZeroUsize,
     rc::Rc,
-    sync::Arc,
+    sync::Arc, mem::MaybeUninit,
 };
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
-use crate::{Component, ComponentRef, InsertionBundle, RawSystem, System, SystemObject};
+use crate::{Component, SystemObject, InsertionBundle, RawSystem, System};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Entity(NonZeroUsize);
@@ -105,18 +104,16 @@ pub trait Storage {
     fn remove(&self, entity: Entity);
 }
 
-pub trait StorageFetch {
-    fn fetch<C: Component>(&self) -> Option<&C>;
-}
+// pub trait StorageFetch {
+//     fn fetch<C: Component>(&self, entity: Entity) -> Option<&C>;
+// }
 
-impl StorageFetch for &(dyn Storage + Send + Sync) {
-    fn fetch<C: Component>(&self) -> Option<&C> {
-        let obj = unsafe { MaybeUninit::<&C>::uninit().assume_init() };
-
-        // todo!();
-        Some(obj)
-    }
-}
+// impl StorageFetch for Arc<dyn Storage + Send + Sync> {
+//     fn fetch<C: Component>(&self, entity: Entity) -> Option<&C> {
+        
+//         // Some(obj)
+//     }
+// }
 
 pub struct ComponentStorage<C: Component> {
     entity_indices: DashMap<Entity, usize>,
@@ -148,7 +145,7 @@ impl<C: Component> GenericStorage<C> for ComponentStorage<C> {
     }
 
     fn fetch(&self, entity: Entity) -> Option<&C> {
-        todo!();
+        todo!()
     }
 }
 
@@ -173,8 +170,19 @@ impl<C: Component + 'static> Storage for ComponentStorage<C> {
     }
 }
 
+impl<C: Component> GenericStorage<C> for &Arc<dyn Storage + Send + Sync> {
+    fn push(&self, entity: Entity, component: C) {
+        
+    }
+
+    fn fetch(&self, entity: Entity) -> Option<&C> {
+        // <Self as GenericStorage<C>>::fetch(self, entity)
+        
+    }
+}
+
 pub struct Components {
-    pub(crate) storage: DashMap<TypeId, Arc<dyn Storage + Send + Sync>>,
+    pub(crate) storage: RwLock<HashMap<TypeId, Arc<dyn Storage + Send + Sync>>>,
 }
 
 impl Components {
@@ -183,8 +191,8 @@ impl Components {
     }
 
     pub fn insert<C: Component + 'static>(&self, entity: Entity, component: C) {
-        let entry = self
-            .storage
+        let mut lock = self.storage.write();
+        let entry = lock
             .entry(TypeId::of::<C>())
             .or_insert_with(|| Arc::new(ComponentStorage::<C>::new()));
 
@@ -197,16 +205,16 @@ impl Components {
     }
 
     pub fn remove_entity(&self, entity: Entity) {
-        self.storage
+        self.storage.write()
             .iter_mut()
-            .for_each(|s| s.value().remove(entity));
+            .for_each(|s| s.1.remove(entity));
     }
 }
 
 impl Default for Components {
     fn default() -> Components {
         Components {
-            storage: DashMap::new(),
+            storage: RwLock::new(HashMap::new()),
         }
     }
 }

@@ -51,17 +51,17 @@ fn test_system(query: Query<&TestComponent, TestFilter<TestComponent>>) {
 
 // fn mut_test_system(mut query: Query<&mut TestComponent, TestFilter<TestComponent>>) {}
 
-fn tuple_test_system(query: Query<(&TestComponent, &TestComponent2), TestFilter<TestComponent>>) {}
+// fn tuple_test_system<'a>(query: Query<'a, (&'a TestComponent, &'a TestComponent2), TestFilter<TestComponent>>) {}
 
-fn tuple_test_system2(
-    query: Query<
-        (&TestComponent, &TestComponent2),
-        (TestFilter<TestComponent>, TestFilter2<TestComponent2>),
-    >,
-) {
-}
+// fn tuple_test_system2(
+//     query: Query<
+//         (&TestComponent, &TestComponent2),
+//         (TestFilter<TestComponent>, TestFilter2<TestComponent2>),
+//     >,
+// ) {
+// }
 
-fn res_test_system(query: Query<&TestComponent>, res: ResMut<TestResource>) {}
+// fn res_test_system(query: Query<&TestComponent>, res: ResMut<TestResource>) {}
 
 fn empty_system() {
     println!("Empty system");
