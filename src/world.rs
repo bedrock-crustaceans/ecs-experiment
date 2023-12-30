@@ -9,14 +9,20 @@ use std::{
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
-use crate::{Component, SystemObject, InsertionBundle, RawSystem, System};
+use crate::{Component, SystemObject, SpawnBundle, RawSystem, System};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct Entity(NonZeroUsize);
+pub struct EntityId(NonZeroUsize);
 
 pub struct EntityMut<'a> {
     world: &'a World,
-    id: Entity,
+    id: EntityId,
+}
+
+impl EntityMut<'_> {
+    pub fn despawn(self) {
+        self.world.components.despawn(self.id);
+    }
 }
 
 pub struct EntityIter {
@@ -31,9 +37,9 @@ impl EntityIter {
 }
 
 impl Iterator for EntityIter {
-    type Item = Entity;
+    type Item = EntityId;
 
-    fn next(&mut self) -> Option<Entity> {
+    fn next(&mut self) -> Option<EntityId> {
         let lock = self.world.entities.storage.read();
         let nth = lock
             .iter()
@@ -41,7 +47,7 @@ impl Iterator for EntityIter {
             .find_map(|(i, e)| if *e { Some(i) } else { None })?;
 
         self.index += nth + 1;
-        Some(Entity(NonZeroUsize::new(self.index + 1)?))
+        Some(EntityId(NonZeroUsize::new(self.index + 1)?))
     }
 }
 
@@ -54,7 +60,7 @@ impl Entities {
         Entities::default()
     }
 
-    pub fn alloc(&self) -> Entity {
+    pub fn alloc(&self) -> EntityId {
         let id = {
             let mut lock = self.storage.write();
 
@@ -73,10 +79,10 @@ impl Entities {
         };
 
         debug_assert_ne!(id, 0);
-        Entity(unsafe { NonZeroUsize::new_unchecked(id) })
+        EntityId(unsafe { NonZeroUsize::new_unchecked(id) })
     }
 
-    pub fn free(&self, entity: Entity) -> bool {
+    pub fn free(&self, entity: EntityId) -> bool {
         let mut lock = self.storage.write();
 
         let mut current = false;
@@ -94,127 +100,107 @@ impl Default for Entities {
     }
 }
 
-pub trait GenericStorage<C: Component> {
-    fn push(&self, entity: Entity, component: C);
-    fn fetch(&self, entity: Entity) -> Option<&C>;
-}
-
-pub trait Storage {
+pub trait TypelessStorage {
     fn as_any(&self) -> &dyn Any;
-    fn remove(&self, entity: Entity);
+    fn despawn(&self, entity: EntityId) -> bool;
 }
 
-// pub trait StorageFetch {
-//     fn fetch<C: Component>(&self, entity: Entity) -> Option<&C>;
-// }
-
-// impl StorageFetch for Arc<dyn Storage + Send + Sync> {
-//     fn fetch<C: Component>(&self, entity: Entity) -> Option<&C> {
-        
-//         // Some(obj)
-//     }
-// }
-
-pub struct ComponentStorage<C: Component> {
-    entity_indices: DashMap<Entity, usize>,
-    storage: RwLock<Vec<Option<C>>>,
+struct TypedStorage<T: Component> {
+    map: DashMap<EntityId, usize>,
+    reverse_map: RwLock<Vec<EntityId>>,
+    storage: RwLock<Vec<T>>,
 }
 
-impl<C: Component> ComponentStorage<C> {
-    pub fn new() -> Self {
-        Self::default()
+impl<T: Component + 'static> TypedStorage<T> {
+    pub fn with(entity: EntityId, component: T) -> Arc<dyn TypelessStorage + Send + Sync> {
+        Arc::new(Self {
+            map: DashMap::from_iter([(entity, 0)]),
+            reverse_map: RwLock::new(vec![entity]),
+            storage: RwLock::new(vec![component])
+        })
     }
-}
 
-impl<C: Component> GenericStorage<C> for ComponentStorage<C> {
-    fn push(&self, entity: Entity, component: C) {
-        let mut lock = self.storage.write();
-
-        let possible_gap =
-            lock.iter()
-                .enumerate()
-                .find_map(|(i, c)| if c.is_none() { Some(i) } else { None });
-
-        if let Some(gap) = possible_gap {
-            self.entity_indices.insert(entity, gap);
-            lock[gap] = Some(component);
+    pub fn insert(&self, entity: EntityId, component: T) -> Option<T> {
+        if let Some(index) = self.map.get(&entity) {
+            let mut lock = self.storage.write();
+            Some(std::mem::replace(&mut lock[*index], component))
         } else {
-            self.entity_indices.insert(entity, lock.len());
-            lock.push(Some(component));
+            let mut lock = self.storage.write();
+
+            let index = lock.len();
+            lock.push(component);
+            drop(lock);
+
+            self.map.insert(entity, index);
+            self.reverse_map.write().push(entity);
+
+            None
         }
     }
 
-    fn fetch(&self, entity: Entity) -> Option<&C> {
+    pub fn fetch(&self, entity: EntityId) -> Option<&T> {
         todo!()
     }
 }
 
-impl<C: Component> Default for ComponentStorage<C> {
+impl<C: Component> Default for TypedStorage<C> {
     fn default() -> Self {
         Self {
-            entity_indices: DashMap::new(),
+            map: DashMap::new(),
+            reverse_map: RwLock::new(Vec::new()),
             storage: RwLock::new(Vec::new()),
         }
     }
 }
 
-impl<C: Component + 'static> Storage for ComponentStorage<C> {
+impl<C: Component + 'static> TypelessStorage for TypedStorage<C> {
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn remove(&self, entity: Entity) {
-        if let Some(index) = self.entity_indices.remove(&entity) {
-            self.storage.write()[index.1] = None;
+    fn despawn(&self, entity: EntityId) -> bool {
+        if let Some((_, index)) = self.map.remove(&entity) {
+            // Drop this entity's component from storage and move the tail to its position.
+            self.storage.write().swap_remove(index);
+
+            // Modify mapping for affected tail entity.
+            let mut reverse_lock = self.reverse_map.write();
+            let modified_id = reverse_lock[reverse_lock.len() - 1];
+            self.map.insert(modified_id, index);
+            reverse_lock.swap_remove(index);
         }
-    }
-}
 
-impl<C: Component> GenericStorage<C> for &Arc<dyn Storage + Send + Sync> {
-    fn push(&self, entity: Entity, component: C) {
-        
-    }
-
-    fn fetch(&self, entity: Entity) -> Option<&C> {
-        // <Self as GenericStorage<C>>::fetch(self, entity)
-        
+        self.storage.read().is_empty()
     }
 }
 
 pub struct Components {
-    pub(crate) storage: RwLock<HashMap<TypeId, Arc<dyn Storage + Send + Sync>>>,
+    pub(crate) map: RwLock<HashMap<TypeId, Arc<dyn TypelessStorage + Send + Sync>>>,
 }
 
 impl Components {
-    pub fn insert_bundle<B: InsertionBundle>(&self, entity: Entity, bundle: B) {
-        bundle.insert_into(self, entity);
-    }
+    pub fn insert<T: Component + 'static>(&self, entity: EntityId, component: T) -> Option<T> {
+        let type_id = TypeId::of::<T>();
 
-    pub fn insert<C: Component + 'static>(&self, entity: Entity, component: C) {
-        let mut lock = self.storage.write();
-        let entry = lock
-            .entry(TypeId::of::<C>())
-            .or_insert_with(|| Arc::new(ComponentStorage::<C>::new()));
-
-        let downcast = entry.as_any().downcast_ref::<ComponentStorage<C>>();
-        if let Some(downcast) = downcast {
-            downcast.push(entity, component);
+        let mut lock = self.map.write();
+        if let Some(store) = lock.get_mut(&type_id) {
+            let downcast: &TypedStorage<T> = store.as_any().downcast_ref().unwrap();
+            downcast.insert(entity, component)
         } else {
-            unreachable!();
+            lock.insert(type_id, TypedStorage::with(entity, component));
+            None
         }
     }
 
-    pub fn remove_entity(&self, entity: Entity) {
-        self.storage.write()
-            .iter_mut()
-            .for_each(|s| s.1.remove(entity));
+    pub fn despawn(&self, entity: EntityId) {
+        self.map.write().retain(|_, store| !store.despawn(entity) );
     }
 }
 
 impl Default for Components {
     fn default() -> Components {
         Components {
-            storage: RwLock::new(HashMap::new()),
+            map: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -259,9 +245,9 @@ impl World {
         Arc::new(World::default())
     }
 
-    pub fn spawn<B: InsertionBundle>(&self, bundle: B) -> EntityMut {
+    pub fn spawn<B: SpawnBundle>(&self, bundle: B) -> EntityMut {
         let entity = self.entities.alloc();
-        self.components.insert_bundle(entity, bundle);
+        bundle.insert_into(&self.components, entity);
 
         EntityMut {
             world: self,
@@ -269,16 +255,13 @@ impl World {
         }
     }
 
+    #[inline]
     pub fn spawn_empty(&self) -> EntityMut {
-        let entity = self.entities.alloc();
-        EntityMut {
-            world: self,
-            id: entity,
-        }
+        self.spawn(())
     }
 
-    pub fn despawn(&self, entity: Entity) -> bool {
-        self.components.remove_entity(entity);
+    pub fn despawn(&self, entity: EntityId) -> bool {
+        self.components.despawn(entity);
         self.entities.free(entity)
     }
 

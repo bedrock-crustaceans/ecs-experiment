@@ -1,22 +1,18 @@
 use std::{
-    any::{Any, TypeId},
     marker::PhantomData,
-    sync::Arc, collections::HashMap,
+    sync::Arc
 };
 
-use dashmap::mapref::one::Ref;
-use parking_lot::RwLockReadGuard;
-
 use crate::{
-    Component, ComponentStorage, Components, Entity, EntityIter, Filter, World, Storage, GenericStorage,
+    Component, Components, EntityId, EntityIter, Filter, World
 };
 
 trait TyEq {}
 
 impl<T> TyEq for (T, T) {}
 
-pub trait InsertionBundle {
-    fn insert_into(self, components: &Components, entity: Entity);
+pub trait SpawnBundle {
+    fn insert_into(self, components: &Components, entity: EntityId);
 }
 
 // pub trait ComponentRef: Sized {
@@ -37,18 +33,22 @@ pub trait InsertionBundle {
 //     const SHARED: bool = false;
 // }
 
-impl<'a, C0: Component + 'static> InsertionBundle for C0 {
-    fn insert_into(self, components: &Components, entity: Entity) {
+impl SpawnBundle for () {
+    fn insert_into(self, _components: &Components, _entity: EntityId) {}
+}
+
+impl<'a, C0: Component + 'static> SpawnBundle for C0 {
+    fn insert_into(self, components: &Components, entity: EntityId) {
         components.insert(entity, self);
     }
 }
 
-impl<'a, C0, C1> InsertionBundle for (C0, C1)
+impl<'a, C0, C1> SpawnBundle for (C0, C1)
 where
     C0: Component + 'static,
     C1: Component + 'static,
 {
-    fn insert_into(self, components: &Components, entity: Entity) {
+    fn insert_into(self, components: &Components, entity: EntityId) {
         components.insert(entity, self.0);
         components.insert(entity, self.1);
     }
@@ -123,15 +123,15 @@ impl<'a, C: Component + 'a, B, F: FilterBundle> Iterator for Query<'a, B, F>
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let lock = self.world.components.storage.read();
+        let lock = self.world.components.map.read();
         let storage = lock.get(&C::id())?;
 
         let entity = self.entity_iter.next()?;
-        Some(unsafe {
-            &*(storage.fetch(entity)? as *const C)
-        })
+        // Some(unsafe {
+        //     &*(storage.fetch(entity)? as *const C)
+        // })
 
-        // todo!();
+        todo!();
         // C::fetch::<F>(entity, &*self.world.as_ref().components.storage.read())
     }
 }
