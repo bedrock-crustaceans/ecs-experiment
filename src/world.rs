@@ -5,14 +5,15 @@ use std::{
     rc::Rc,
     sync::Arc, mem::MaybeUninit,
 };
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
-use crate::{Component, SystemObject, SpawnBundle, RawSystem, System};
+use crate::{Component, SysContainer, SpawnBundle, NakedSys, Sys};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct EntityId(NonZeroUsize);
+pub struct EntityId(pub(crate) NonZeroUsize);
 
 pub struct EntityMut<'a> {
     world: &'a World,
@@ -25,34 +26,8 @@ impl EntityMut<'_> {
     }
 }
 
-pub struct EntityIter {
-    world: Arc<World>,
-    index: usize,
-}
-
-impl EntityIter {
-    pub fn new(world: Arc<World>) -> Self {
-        EntityIter { world, index: 0 }
-    }
-}
-
-impl Iterator for EntityIter {
-    type Item = EntityId;
-
-    fn next(&mut self) -> Option<EntityId> {
-        let lock = self.world.entities.storage.read();
-        let nth = lock
-            .iter()
-            .enumerate()
-            .find_map(|(i, e)| if *e { Some(i) } else { None })?;
-
-        self.index += nth + 1;
-        Some(EntityId(NonZeroUsize::new(self.index + 1)?))
-    }
-}
-
 pub struct Entities {
-    storage: RwLock<Vec<bool>>,
+    next_index: AtomicUsize
 }
 
 impl Entities {
@@ -61,47 +36,22 @@ impl Entities {
     }
 
     pub fn alloc(&self) -> EntityId {
-        let id = {
-            let mut lock = self.storage.write();
-
-            let possible_gap = lock
-                .iter()
-                .enumerate()
-                .find_map(|(i, o)| if !o { Some(i) } else { None });
-
-            if let Some(gap) = possible_gap {
-                lock[gap] = true;
-                gap + 1
-            } else {
-                lock.push(true);
-                lock.len()
-            }
-        };
-
-        debug_assert_ne!(id, 0);
-        EntityId(unsafe { NonZeroUsize::new_unchecked(id) })
-    }
-
-    pub fn free(&self, entity: EntityId) -> bool {
-        let mut lock = self.storage.write();
-
-        let mut current = false;
-        std::mem::swap(&mut lock[entity.0.get()], &mut current);
-
-        current
+        EntityId(NonZeroUsize::new(self.next_index.fetch_add(1, Ordering::Relaxed)).unwrap())
     }
 }
 
 impl Default for Entities {
     fn default() -> Entities {
         Entities {
-            storage: RwLock::new(Vec::new()),
+            next_index: AtomicUsize::new(1)
         }
     }
 }
 
 pub trait TypelessStorage {
     fn as_any(&self) -> &dyn Any;
+
+    // fn fetch(&self, entity: EntityId) -> *const c_void;
     fn despawn(&self, entity: EntityId) -> bool;
 }
 
@@ -206,7 +156,7 @@ impl Default for Components {
 }
 
 pub struct Systems {
-    storage: RwLock<Vec<Arc<dyn System + Send + Sync>>>,
+    storage: RwLock<Vec<Arc<dyn Sys + Send + Sync>>>,
 }
 
 impl Systems {
@@ -214,7 +164,7 @@ impl Systems {
         Systems::default()
     }
 
-    pub fn push(&self, system: Arc<dyn System + Send + Sync>) {
+    pub fn push(&self, system: Arc<dyn Sys + Send + Sync>) {
         self.storage.write().push(system);
     }
 
@@ -260,18 +210,17 @@ impl World {
         self.spawn(())
     }
 
-    pub fn despawn(&self, entity: EntityId) -> bool {
+    pub fn despawn(&self, entity: EntityId) {
         self.components.despawn(entity);
-        self.entities.free(entity)
     }
 
-    pub fn system<Params, Sys>(&self, system: Sys)
+    pub fn system<P, S>(&self, system: S)
     where
-        Params: Send + Sync + 'static,
-        Sys: RawSystem<Params> + Send + Sync + 'static,
-        SystemObject<Params, Sys>: System,
+        P: Send + Sync + 'static,
+        S: NakedSys<P> + Send + Sync + 'static,
+        SysContainer<P, S>: Sys,
     {
-        let wrapped = Arc::new(system.into_object());
+        let wrapped = Arc::new(system.into_container());
         self.systems.push(wrapped);
     }
 

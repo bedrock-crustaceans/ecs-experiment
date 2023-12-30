@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    Component, Components, EntityId, EntityIter, Filter, World
+    Component, Components, EntityId, Filter, World
 };
 
 trait TyEq {}
@@ -55,46 +55,27 @@ where
 }
 
 pub trait QueryBundle: Sized {
-    // const SHARED: bool;
-
     type NonRef;
-
-    // type Output<'b> where 'b: 'a;
-
-    // fn fetch<F: FilterBundle>(
-    //     entity: Entity, map: &'a HashMap<TypeId, Arc<dyn Storage + Send + Sync>>
-    // ) -> Option<Self::Output<'a>>;
+    const SHARED: bool;
 }
 
-impl<C1: Component> QueryBundle for &C1 {
-    // const SHARED: bool = C1::SHARED;
-
-    type NonRef = C1;
-
-    // type Output<'b> = &'a C1 where 'b: 'a;
-
-    // fn fetch<F: FilterBundle>(
-    //     entity: Entity, map: &'a HashMap<TypeId, Arc<dyn Storage + Send + Sync>>
-    // ) -> Option<Self::Output<'a>> {
-    //     // map.get(&C1::id())?.as_ref().fetch::<C1>()
-    //     todo!();
-    // }
+impl<T: Component> QueryBundle for &T {
+    type NonRef = T;
+    const SHARED: bool = true;
 }
 
-impl<C0, C1> QueryBundle for (C0, C1)
+impl<T: Component> QueryBundle for &mut T {
+    type NonRef = T;
+    const SHARED: bool = false;
+}
+
+impl<T1, T2> QueryBundle for (T1, T2)
 where
-    C0: QueryBundle,
-    C1: QueryBundle,
+    T1: QueryBundle,
+    T2: QueryBundle,
 {
-    type NonRef = (C0::NonRef, C1::NonRef);
-
-    // const SHARED: bool = C0::SHARED || C1::SHARED;
-
-    // type Output<'b> = (C0, C1) where 'b: 'a;
-
-    // fn fetch<'b, F: FilterBundle>(entity: Entity, map: &'a HashMap<TypeId, Arc<dyn Storage + Send + Sync>>) -> Option<Self> {
-    //     todo!();
-    // }
+    type NonRef = (T1::NonRef, T2::NonRef);
+    const SHARED: bool = T1::SHARED || T2::SHARED;
 }
 
 pub trait FilterBundle {}
@@ -111,9 +92,8 @@ where
 }
 
 pub struct Query<'w, C: QueryBundle, F: FilterBundle = ()> {
-    entity_iter: EntityIter,
     world: Arc<World>,
-    phantom: PhantomData<&'w (C, F)>,
+    _marker: PhantomData<&'w (C, F)>,
 }
 
 impl<'a, C: Component + 'a, B, F: FilterBundle> Iterator for Query<'a, B, F> 
@@ -123,25 +103,25 @@ impl<'a, C: Component + 'a, B, F: FilterBundle> Iterator for Query<'a, B, F>
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let lock = self.world.components.map.read();
-        let storage = lock.get(&C::id())?;
+        dbg!(std::any::type_name::<B>());
 
-        let entity = self.entity_iter.next()?;
+        // let lock = self.world.components.map.read();
+        // let storage = lock.get(&C::id())?;
+
         // Some(unsafe {
         //     &*(storage.fetch(entity)? as *const C)
         // })
 
         todo!();
-        // C::fetch::<F>(entity, &*self.world.as_ref().components.storage.read())
+        // C::fetch::<F>(entity, &*self.world.as_ref().components.map.read())
     }
 }
 
 impl<'a, C: QueryBundle, F: FilterBundle> Query<'a, C, F> {
     pub fn new(world: Arc<World>) -> Self {
         Self {
-            entity_iter: EntityIter::new(world.clone()),
             world,
-            phantom: PhantomData,
+            _marker: PhantomData,
         }
     }
 }

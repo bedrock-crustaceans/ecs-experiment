@@ -4,103 +4,102 @@ use crate::{
     event::{Event, EventReader, EventWriter},
     query::{FilterBundle, Query},
     resource::{Res, ResMut, Resource},
-    Components, EntityIter, QueryBundle, World,
+    QueryBundle, World,
 };
 
-pub trait System {
+pub trait Sys {
     fn call(&self, world: Arc<World>);
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct SystemObject<Params, F: RawSystem<Params>> {
+pub struct SysContainer<P, F: NakedSys<P>> {
     pub system: F,
-    pub phantom: PhantomData<Params>,
+    pub _marker: PhantomData<P>,
 }
 
-impl<F: RawSystem<()>> System for SystemObject<(), F> {
+impl<F: NakedSys<()>> Sys for SysContainer<(), F> {
     fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-impl<P0, F: RawSystem<P0>> System for SystemObject<P0, F>
+impl<P0, F: NakedSys<P0>> Sys for SysContainer<P0, F>
 where
-    P0: SystemParam,
+    P0: SysParam,
 {
     fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-impl<P0, P1, F: RawSystem<(P0, P1)>> System for SystemObject<(P0, P1), F>
+impl<P0, P1, F: NakedSys<(P0, P1)>> Sys for SysContainer<(P0, P1), F>
 where
-    P0: SystemParam,
-    P1: SystemParam,
+    P0: SysParam,
+    P1: SysParam,
 {
     fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-pub trait SystemParam {
-    const EXCLUSIVE: bool;
+pub trait SysParam {
+    const SHARED: bool;
 
     fn fetch(world: Arc<World>) -> Self;
 }
 
-impl<'a, C: QueryBundle, F: FilterBundle> SystemParam for Query<'a, C, F> {
-    // const EXCLUSIVE: bool = C::EX;
-    const EXCLUSIVE: bool = true;
+impl<'a, C: QueryBundle, F: FilterBundle> SysParam for Query<'a, C, F> {
+    const SHARED: bool = C::SHARED;
 
     fn fetch(world: Arc<World>) -> Self {
         Query::new(world)
     }
 }
 
-impl<'a, R: Resource> SystemParam for Res<'a, R> {
-    const EXCLUSIVE: bool = false;
+impl<'a, R: Resource> SysParam for Res<'a, R> {
+    const SHARED: bool = false;
 
     fn fetch(world: Arc<World>) -> Self {
         todo!();
     }
 }
 
-impl<'a, R: Resource> SystemParam for ResMut<'a, R> {
-    const EXCLUSIVE: bool = true;
+impl<'a, R: Resource> SysParam for ResMut<'a, R> {
+    const SHARED: bool = true;
 
     fn fetch(world: Arc<World>) -> Self {
         todo!();
     }
 }
 
-impl<E: Event> SystemParam for EventWriter<E> {
-    const EXCLUSIVE: bool = false;
+impl<E: Event> SysParam for EventWriter<E> {
+    const SHARED: bool = false;
 
     fn fetch(world: Arc<World>) -> Self {
         todo!();
     }
 }
 
-impl<E: Event> SystemParam for EventReader<E> {
-    const EXCLUSIVE: bool = false;
+impl<E: Event> SysParam for EventReader<E> {
+    const SHARED: bool = false;
 
     fn fetch(world: Arc<World>) -> Self {
         todo!();
     }
 }
 
-pub trait RawSystem<Params>: Sized {
-    fn into_object(self) -> SystemObject<Params, Self> {
-        SystemObject {
+pub trait NakedSys<Params>: Sized {
+    fn into_container(self) -> SysContainer<Params, Self> {
+        SysContainer {
             system: self,
-            phantom: PhantomData,
+            _marker: PhantomData,
         }
     }
 
     fn call(&self, world: Arc<World>);
 }
 
-impl<F> RawSystem<()> for F
+impl<F> NakedSys<()> for F
 where
     F: Fn(),
 {
@@ -109,10 +108,10 @@ where
     }
 }
 
-impl<F, P0> RawSystem<P0> for F
+impl<F, P0> NakedSys<P0> for F
 where
     F: Fn(P0),
-    P0: SystemParam,
+    P0: SysParam,
 {
     fn call(&self, world: Arc<World>) {
         let p0 = P0::fetch(world);
@@ -120,11 +119,11 @@ where
     }
 }
 
-impl<F, P0, P1> RawSystem<(P0, P1)> for F
+impl<F, P0, P1> NakedSys<(P0, P1)> for F
 where
     F: Fn(P0, P1),
-    P0: SystemParam,
-    P1: SystemParam,
+    P0: SysParam,
+    P1: SysParam,
 {
     fn call(&self, world: Arc<World>) {
         let p0 = P0::fetch(world.clone());
