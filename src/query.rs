@@ -91,31 +91,64 @@ where
 {
 }
 
-pub struct Query<'w, C: QueryBundle, F: FilterBundle = ()> {
+pub struct Query<'w, Q: QueryBundle, F: FilterBundle = ()> {
     world: Arc<World>,
-    _marker: PhantomData<&'w (C, F)>,
+    _marker: PhantomData<&'w (Q, F)>,
 }
 
-impl<'a, C: Component + 'a, B, F: FilterBundle> Iterator for Query<'a, B, F> 
-    where B: QueryBundle<NonRef = C>
+impl<'w, C, F, N> IntoIterator for Query<'w, N, F>
+where
+    C: Component + 'w, F: FilterBundle, N: QueryBundle<NonRef = C>
 {
-    type Item = &'a B::NonRef;
+    type Item =  &'w N::NonRef;
+    type IntoIter = QueryIter<'w, N, F>;
 
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        dbg!(std::any::type_name::<B>());
-
-        // let lock = self.world.components.map.read();
-        // let storage = lock.get(&C::id())?;
-
-        // Some(unsafe {
-        //     &*(storage.fetch(entity)? as *const C)
-        // })
-
-        todo!();
-        // C::fetch::<F>(entity, &*self.world.as_ref().components.map.read())
+    fn into_iter(self) -> Self::IntoIter {
+        QueryIter {
+            world: self.world,
+            index: 0,
+            _marker: PhantomData
+        }
     }
 }
+
+pub struct QueryIter<'w, Q: QueryBundle, F: FilterBundle> {
+    world: Arc<World>,
+    index: usize,
+    _marker: PhantomData<&'w (Q, F)>
+}
+
+impl<'w, C, F, N> Iterator for QueryIter<'w, N, F>
+where
+    C: Component + 'w, F: FilterBundle, N: QueryBundle<NonRef = C>
+{
+    type Item = &'w N::NonRef;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
+}
+
+// impl<'a, C: Component + 'a, N, F: FilterBundle> Iterator for Query<'a, N, F>
+//     where N: QueryBundle<NonRef = C>
+// {
+//     type Item = &'a N::NonRef;
+//
+//     #[inline]
+//     fn next(&mut self) -> Option<Self::Item> {
+//         dbg!(std::any::type_name::<N>());
+//
+//         // let lock = self.world.components.map.read();
+//         // let storage = lock.get(&C::id())?;
+//
+//         // Some(unsafe {
+//         //     &*(storage.fetch(entity)? as *const C)
+//         // })
+//
+//         todo!();
+//         // C::fetch::<F>(entity, &*self.world.as_ref().components.map.read())
+//     }
+// }
 
 impl<'a, C: QueryBundle, F: FilterBundle> Query<'a, C, F> {
     pub fn new(world: Arc<World>) -> Self {
