@@ -1,66 +1,40 @@
-use std::{marker::PhantomData, ops::Deref};
+use std::marker::PhantomData;
+use crate::{Component, Filter, Query, Resource, World};
+use crate::entity::Entity;
 
-use crate::{
-    query::Query,
-    resource::{ResMut, Resource},
-    world::Systems,
-    Component, Filter, System, SystemParam, World,
-};
+#[derive(Debug)]
+struct Alive;
 
-pub struct TestComponent;
+impl Component for Alive {}
 
-impl Component for TestComponent {}
-
-pub struct TestComponent2 {}
-
-impl Component for TestComponent2 {}
-
-pub struct TestFilter<T> {
-    _marker: PhantomData<T>,
+#[derive(Debug)]
+struct Health {
+    value: f32
 }
 
-impl<T> Filter for TestFilter<T> {}
+impl Component for Health {}
 
-pub struct TestFilter2<T> {
-    _marker: PhantomData<T>,
+fn health_system(query: Query<&Health>) {
+    for health in &query {
+        println!("Entity has {} health", health.value);
+    }
 }
 
-impl<T> Filter for TestFilter2<T> {}
-
-pub struct TestResource {}
-
-impl Resource for TestResource {}
-
-fn test_system(query: Query<&TestComponent, TestFilter<TestComponent>>) {}
-
-fn mut_test_system(mut query: Query<&mut TestComponent, TestFilter<TestComponent>>) {}
-
-fn tuple_test_system(query: Query<(&TestComponent, &TestComponent2), TestFilter<TestComponent>>) {}
-
-fn tuple_test_system2(
-    query: Query<
-        (&TestComponent, &TestComponent2),
-        (TestFilter<TestComponent>, TestFilter2<TestComponent2>),
-    >,
-) {
-}
-
-fn res_test_system(query: Query<&TestComponent>, res: ResMut<TestResource>) {}
-
-fn empty_system() {
-    println!("Empty system");
-}
-
-#[test]
-fn test() {
+#[tokio::test]
+async fn test() {
     let mut world = World::new();
+    world.system(health_system);
 
-    world.system(test_system);
-    // world.system(mut_test_system);
-    // world.system(tuple_test_system);
-    // world.system(tuple_test_system2);
-    // world.system(res_test_system);
-    world.system(empty_system);
+    println!("\n\nSpawn 2 entities");
+    let entity1 = world.spawn((Health { value: 1.0 }, Alive));
+    let entity2 = world.spawn(Health { value: 0.0 });
 
     world.execute();
+
+    println!("Despawn entity 2");
+    entity2.despawn();
+
+    world.execute();
+
+    println!();
 }

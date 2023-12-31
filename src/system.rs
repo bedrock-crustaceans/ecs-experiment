@@ -1,127 +1,159 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
+use parking_lot::RwLock;
 
-use crate::{
-    event::{Event, EventReader, EventWriter},
-    query::{FilterBundle, Query},
-    resource::{Res, ResMut, Resource},
-    QueryBundle, World,
-};
+use crate::{event::{Event, EventReader, EventWriter}, query::{FilterBundle, Query}, resource::{Res, ResMut, Resource}, QueryBundle, World, sealed};
 
-pub trait System {
-    fn call(&self, world: &World);
+pub trait Sys {
+    fn call(&self, world: Arc<World>);
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct GenericSystem<'a, Params, F: RawSystem<'a, Params>> {
+pub struct SysContainer<P, F: NakedSys<P>> {
     pub system: F,
-    pub phantom: PhantomData<Params>,
+    pub _marker: PhantomData<P>,
 }
 
-impl<F: RawSystem<'a, ()>> System for GenericSystem<(), F> {
-    fn call(&self, world: &World) {
+impl<F: NakedSys<()>> Sys for SysContainer<(), F> {
+    fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-impl<'a, P0, F: RawSystem<'a, P0>> System for GenericSystem<P0, F>
+impl<P0, F: NakedSys<P0>> Sys for SysContainer<P0, F>
 where
-    P0: SystemParam<'a>,
+    P0: SysParam,
 {
-    fn call(&'a self, world: &World) {
+    fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-impl<'a, P0, P1, F: RawSystem<'a, (P0, P1)>> System for GenericSystem<(P0, P1), F>
+impl<P0, P1, F: NakedSys<(P0, P1)>> Sys for SysContainer<(P0, P1), F>
 where
-    P0: SystemParam<'a>,
-    P1: SystemParam<'a>,
+    P0: SysParam,
+    P1: SysParam,
 {
-    fn call(&self, world: &World) {
+    fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-pub trait SystemParam<'a>: Sized {
-    const EXCLUSIVE: bool;
+pub trait SysParam {
+    const SHARED: bool;
 
-    fn fetch(world: &'a World) -> Self {
-        panic!(
-            "{} does not support immutable fetching",
-            std::any::type_name::<Self>()
-        );
-    }
+    #[doc(hidden)]
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self;
+}
 
-    fn fetch_mut(world: &'a mut World) -> Self {
-        panic!(
-            "{} does not support mutable fetching",
-            std::any::type_name::<Self>()
-        );
+impl<C: QueryBundle, F: FilterBundle> SysParam for Query<C, F> {
+    const SHARED: bool = C::SHARED;
+
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
+        Query::new(world)
     }
 }
 
-impl<'a, C: QueryBundle, F: FilterBundle> SystemParam<'a> for Query<'a, C, F> {
-    const EXCLUSIVE: bool = C::MUTABLE;
+impl<'a, R: Resource> SysParam for Res<'a, R> {
+    const SHARED: bool = false;
 
-    fn fetch(world: &'a World) -> Self {
-        Query::from(world)
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
+        todo!();
     }
 }
 
-impl<'a, R: Resource> SystemParam<'a> for Res<'a, R> {
-    const EXCLUSIVE: bool = false;
+impl<'a, R: Resource> SysParam for ResMut<'a, R> {
+    const SHARED: bool = true;
+
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
+        todo!();
+    }
 }
 
-impl<'a, R: Resource> SystemParam<'a> for ResMut<'a, R> {
-    const EXCLUSIVE: bool = true;
+impl<E: Event> SysParam for EventWriter<E> {
+    const SHARED: bool = false;
+
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
+        todo!();
+    }
 }
 
-impl<E: Event> SystemParam<'_> for EventWriter<E> {
-    const EXCLUSIVE: bool = false;
+impl<E: Event> SysParam for EventReader<E> {
+    const SHARED: bool = false;
+
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
+        todo!();
+    }
 }
 
-impl<E: Event> SystemParam<'_> for EventReader<E> {
-    const EXCLUSIVE: bool = false;
-}
-
-pub trait RawSystem<'a, Params>: Sized {
-    fn into_generic(self) -> GenericSystem<Params, Self> {
-        GenericSystem {
+pub trait NakedSys<Params>: Sized {
+    fn into_container(self) -> SysContainer<Params, Self> {
+        SysContainer {
             system: self,
-            phantom: PhantomData,
+            _marker: PhantomData,
         }
     }
 
-    fn call(&self, world: &'a World);
+    fn call(&self, world: Arc<World>);
 }
 
-impl<'a, F> RawSystem<'a, ()> for F
+impl<F> NakedSys<()> for F
 where
     F: Fn(),
 {
-    fn call(&self, _world: &'a World) {
+    fn call(&self, _world: Arc<World>) {
         self();
     }
 }
 
-impl<'a, F, P0> RawSystem<'a, P0> for F
+impl<F, P0> NakedSys<P0> for F
 where
     F: Fn(P0),
-    P0: SystemParam<'a>,
+    P0: SysParam,
 {
-    fn call(&self, world: &'a World) {
-        let p0 = P0::fetch(world);
+    fn call(&self, world: Arc<World>) {
+        let p0 = P0::fetch::<sealed::Sealer>(world);
         self(p0);
     }
 }
 
-impl<'a, F, P0, P1> RawSystem<'a, (P0, P1)> for F
+impl<F, P0, P1> NakedSys<(P0, P1)> for F
 where
     F: Fn(P0, P1),
-    P0: SystemParam<'a>,
-    P1: SystemParam<'a>,
+    P0: SysParam,
+    P1: SysParam,
 {
-    fn call(&self, world: &'a World) {
-        todo!();
+    fn call(&self, world: Arc<World>) {
+        let p0 = P0::fetch::<sealed::Sealer>(world.clone());
+        let p1 = P1::fetch::<sealed::Sealer>(world);
+        self(p0, p1);
+    }
+}
+
+pub struct Systems {
+    storage: RwLock<Vec<Arc<dyn Sys + Send + Sync>>>,
+}
+
+impl Systems {
+    pub fn new() -> Systems {
+        Systems::default()
+    }
+
+    pub fn push(&self, system: Arc<dyn Sys + Send + Sync>) {
+        self.storage.write().push(system);
+    }
+
+    pub fn call(&self, world: &Arc<World>) {
+        let lock = self.storage.read();
+        lock.iter().for_each(|sys| {
+            sys.call(Arc::clone(world));
+        });
+    }
+}
+
+impl Default for Systems {
+    fn default() -> Systems {
+        Systems {
+            storage: RwLock::new(Vec::new()),
+        }
     }
 }
