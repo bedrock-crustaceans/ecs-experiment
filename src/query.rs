@@ -117,42 +117,42 @@ where
 {
 }
 
-pub struct Query<'w, Q: QueryBundle, F: FilterBundle = ()> {
+pub struct Query<Q: QueryBundle, F: FilterBundle = ()> {
     world: Arc<World>,
-    _marker: PhantomData<&'w (Q, F)>,
+    _marker: PhantomData<(Q, F)>,
 }
 
-impl<'w, C, F, N> IntoIterator for Query<'w, N, F>
+impl<'query, C, F, N> IntoIterator for &'query Query<N, F>
 where
     C: Component + 'static, F: FilterBundle, N: QueryBundle<NonRef = C>
 {
-    type Item =  &'w N::NonRef;
-    type IntoIter = QueryIter<'w, C, N, F>;
+    type Item =  &'query N::NonRef;
+    type IntoIter = QueryIter<'query, C, N, F>;
 
     fn into_iter(self) -> Self::IntoIter {
         QueryIter {
-            world: self.world,
+            world: self.world.clone(),
             index: 0,
             _marker: PhantomData
         }
     }
 }
 
-pub struct QueryIter<'w, C, Q, F>
+pub struct QueryIter<'query, C, Q, F>
 where
     Q: QueryBundle<NonRef = C>,
     F: FilterBundle
 {
     world: Arc<World>,
     index: usize,
-    _marker: PhantomData<&'w (Q, F)>
+    _marker: PhantomData<&'query (Q, F)>
 }
 
-impl<'w, C, F, N> Iterator for QueryIter<'w, C, N, F>
+impl<'query, C, F, N> Iterator for QueryIter<'query, C, N, F>
 where
     C: Component + 'static, F: FilterBundle, N: QueryBundle<NonRef = C>
 {
-    type Item = &'w N::NonRef;
+    type Item = &'query N::NonRef;
 
     fn next(&mut self) -> Option<Self::Item> {
         let typeless_store = self.world.components.map
@@ -207,7 +207,7 @@ where
     }
 }
 
-impl<'w, C, Q, F> Drop for QueryIter<'w, C, Q, F>
+impl<'query, C, Q, F> Drop for QueryIter<'query, C, Q, F>
 where
     Q: QueryBundle<NonRef = C>,
     F: FilterBundle
@@ -217,7 +217,7 @@ where
     }
 }
 
-impl<'a, C: QueryBundle, F: FilterBundle> Query<'a, C, F> {
+impl<C: QueryBundle, F: FilterBundle> Query<C, F> {
     pub fn new(world: Arc<World>) -> Self {
         Self {
             world,

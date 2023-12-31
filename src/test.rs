@@ -38,14 +38,11 @@ pub struct Resource1 {}
 impl Resource for Resource1 {}
 
 fn test_system(query: Query<&Message2, Filter1<Message1>>) {
-    for component in query {
-        println!("{component:?}");
-    }
+    let component = query.into_iter().next().unwrap();
+    println!("{component:?}");
 }
 
 fn mut_test_system(mut query: Query<&mut Message1, Filter1<Message1>>) {}
-
-fn tuple_test_system<'a>(query: Query<'a, (&'a Message1, &'a Message2), Filter1<Message1>>) {}
 
 fn tuple_test_system2(
     query: Query<
@@ -71,14 +68,12 @@ async fn test() {
         value: 2
     });
 
-
-
     world.system(test_system);
     // world.system(mut_test_system);
     // world.system(tuple_test_system);
     // world.system(tuple_test_system2);
     // world.system(res_test_system);
-    // world.system(empty_system);
+    world.system(empty_system);
 
     world.execute();
     entity.despawn();

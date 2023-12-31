@@ -48,7 +48,7 @@ pub trait SysParam {
     fn fetch(world: Arc<World>) -> Self;
 }
 
-impl<'a, C: QueryBundle, F: FilterBundle> SysParam for Query<'a, C, F> {
+impl<C: QueryBundle, F: FilterBundle> SysParam for Query<C, F> {
     const SHARED: bool = C::SHARED;
 
     fn fetch(world: Arc<World>) -> Self {
