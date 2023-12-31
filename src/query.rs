@@ -179,6 +179,7 @@ where
             let store_index = typed_store.reverse_map.read().get(self.index).map(|id| *id);
             if store_index.is_none() {
                 // No more components remaining.
+                std::mem::forget(store_lock);
                 return None
             };
 

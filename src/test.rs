@@ -64,12 +64,12 @@ fn empty_system() {
 #[tokio::test]
 async fn test() {
     let mut world = World::new();
-    // world.spawn(Message2 {
-    //     value: 1
-    // });
-    // let entity = world.spawn(Message2 {
-    //     value: 2
-    // });
+    world.spawn(Message2 {
+        value: 1
+    });
+    let entity = world.spawn(Message2 {
+        value: 2
+    });
 
 
 
@@ -81,5 +81,5 @@ async fn test() {
     // world.system(empty_system);
 
     world.execute();
-    // entity.despawn();
+    entity.despawn();
 }
