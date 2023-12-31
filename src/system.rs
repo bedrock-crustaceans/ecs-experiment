@@ -1,12 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 use parking_lot::RwLock;
 
-use crate::{
-    event::{Event, EventReader, EventWriter},
-    query::{FilterBundle, Query},
-    resource::{Res, ResMut, Resource},
-    QueryBundle, World,
-};
+use crate::{event::{Event, EventReader, EventWriter}, query::{FilterBundle, Query}, resource::{Res, ResMut, Resource}, QueryBundle, World, sealed};
 
 pub trait Sys {
     fn call(&self, world: Arc<World>);
@@ -46,13 +41,14 @@ where
 pub trait SysParam {
     const SHARED: bool;
 
-    fn fetch(world: Arc<World>) -> Self;
+    #[doc(hidden)]
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self;
 }
 
 impl<C: QueryBundle, F: FilterBundle> SysParam for Query<C, F> {
     const SHARED: bool = C::SHARED;
 
-    fn fetch(world: Arc<World>) -> Self {
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
         Query::new(world)
     }
 }
@@ -60,7 +56,7 @@ impl<C: QueryBundle, F: FilterBundle> SysParam for Query<C, F> {
 impl<'a, R: Resource> SysParam for Res<'a, R> {
     const SHARED: bool = false;
 
-    fn fetch(world: Arc<World>) -> Self {
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
         todo!();
     }
 }
@@ -68,7 +64,7 @@ impl<'a, R: Resource> SysParam for Res<'a, R> {
 impl<'a, R: Resource> SysParam for ResMut<'a, R> {
     const SHARED: bool = true;
 
-    fn fetch(world: Arc<World>) -> Self {
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
         todo!();
     }
 }
@@ -76,7 +72,7 @@ impl<'a, R: Resource> SysParam for ResMut<'a, R> {
 impl<E: Event> SysParam for EventWriter<E> {
     const SHARED: bool = false;
 
-    fn fetch(world: Arc<World>) -> Self {
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
         todo!();
     }
 }
@@ -84,7 +80,7 @@ impl<E: Event> SysParam for EventWriter<E> {
 impl<E: Event> SysParam for EventReader<E> {
     const SHARED: bool = false;
 
-    fn fetch(world: Arc<World>) -> Self {
+    fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
         todo!();
     }
 }
@@ -115,7 +111,7 @@ where
     P0: SysParam,
 {
     fn call(&self, world: Arc<World>) {
-        let p0 = P0::fetch(world);
+        let p0 = P0::fetch::<sealed::Sealer>(world);
         self(p0);
     }
 }
@@ -127,8 +123,8 @@ where
     P1: SysParam,
 {
     fn call(&self, world: Arc<World>) {
-        let p0 = P0::fetch(world.clone());
-        let p1 = P1::fetch(world);
+        let p0 = P0::fetch::<sealed::Sealer>(world.clone());
+        let p1 = P1::fetch::<sealed::Sealer>(world);
         self(p0, p1);
     }
 }

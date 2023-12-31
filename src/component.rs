@@ -2,8 +2,9 @@ use std::any::{Any, TypeId};
 use std::sync::Arc;
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use crate::Component;
 use crate::entity::EntityId;
+
+pub trait Component: Send + Sync {}
 
 pub trait SpawnBundle {
     fn insert_into(self, components: &Components, entity: EntityId);

@@ -9,22 +9,17 @@ mod world;
 mod entity;
 mod component;
 
-use std::any::TypeId;
-
 pub use event::*;
 pub use query::*;
 pub use resource::*;
 pub use system::*;
 pub use world::*;
+pub use component::*;
+pub use entity::*;
 
-pub trait Component: Send + Sync {
-    // fn id() -> TypeId;
+pub(crate) mod sealed {
+    pub trait Sealed {}
+    pub enum Sealer {}
+
+    impl Sealed for Sealer {}
 }
-
-impl<C: Component> Component for &C {
-    // fn id() -> TypeId {
-    //     C::id()
-    // }
-}
-
-pub trait Filter {}

@@ -3,19 +3,13 @@ use std::{
     sync::Arc
 };
 use std::any::TypeId;
+use std::iter::FusedIterator;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::{
-    Component, Filter, World
-};
-use crate::component::{Components, TypedStorage};
+use crate::{sealed, World};
+use crate::component::{Component, Components, TypedStorage};
 
-pub(crate) mod sealed {
-    pub enum Sealer {}
-    pub trait Sealed {}
-
-    impl Sealed for Sealer {}
-}
+pub trait Filter {}
 
 /// Represents a collection of items contained in a [`Query`].
 ///
@@ -115,7 +109,8 @@ impl LockFlag {
 }
 
 /// A query consists of resources and filters. The first generic parameter of the query contains
-/// the resources. This can for example be a type implementing [`Component`] or a [`Res`](crate::resource::Res).
+/// the resources. This can for example be a type implementing [`Component`]
+/// or a [`Res`](crate::resource::Res).
 /// Additionally, tuples of mixed types are also allowed to request multiple resources at once.
 ///
 /// # Example
@@ -236,6 +231,7 @@ where
                 // Retrieve lock
                 // SAFETY: This is safe because this query has acquired the lock on the first iteration.
                 // Additionally, this lock has been forgotten and therefore this thread logically still owns the lock.
+                // In case a second iterator is created from the same query, the lock flag will still be set.
                 unsafe {
                     typed_store.storage.make_read_guard_unchecked()
                 }
@@ -265,9 +261,12 @@ where
             self.index += 1;
             item
         } else {
-            dbg!("yes, none");
             // This component is not owned by any entity
             None
         }
     }
 }
+
+impl<C, F, N> FusedIterator for QueryIter<'_, C, N, F>
+where
+    C: Component + 'static, F: FilterBundle, N: QueryBundle<NonRef = C> {}
