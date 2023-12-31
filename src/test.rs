@@ -42,22 +42,6 @@ fn test_system(query: Query<&Message2, Filter1<Message1>>) {
     println!("{component:?}");
 }
 
-fn mut_test_system(mut query: Query<&mut Message1, Filter1<Message1>>) {}
-
-fn tuple_test_system2(
-    query: Query<
-        (&Message1, &Message2),
-        (Filter1<Message1>, Filter2<Message2>),
-    >,
-) {
-}
-
-fn res_test_system(query: Query<&Message1>, res: ResMut<Resource1>) {}
-
-fn empty_system() {
-    println!("Empty system");
-}
-
 #[tokio::test]
 async fn test() {
     let mut world = World::new();
@@ -69,12 +53,6 @@ async fn test() {
     });
 
     world.system(test_system);
-    // world.system(mut_test_system);
-    // world.system(tuple_test_system);
-    // world.system(tuple_test_system2);
-    // world.system(res_test_system);
-    world.system(empty_system);
-
     world.execute();
     entity.despawn();
 }

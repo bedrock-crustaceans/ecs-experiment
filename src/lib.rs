@@ -6,6 +6,8 @@ mod query;
 mod resource;
 mod system;
 mod world;
+mod entity;
+mod component;
 
 use std::any::TypeId;
 

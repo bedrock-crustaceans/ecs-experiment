@@ -1,4 +1,5 @@
 use std::{marker::PhantomData, sync::Arc};
+use parking_lot::RwLock;
 
 use crate::{
     event::{Event, EventReader, EventWriter},
@@ -129,5 +130,34 @@ where
         let p0 = P0::fetch(world.clone());
         let p1 = P1::fetch(world);
         self(p0, p1);
+    }
+}
+
+pub struct Systems {
+    storage: RwLock<Vec<Arc<dyn Sys + Send + Sync>>>,
+}
+
+impl Systems {
+    pub fn new() -> Systems {
+        Systems::default()
+    }
+
+    pub fn push(&self, system: Arc<dyn Sys + Send + Sync>) {
+        self.storage.write().push(system);
+    }
+
+    pub fn call(&self, world: &Arc<World>) {
+        let lock = self.storage.read();
+        lock.iter().for_each(|sys| {
+            sys.call(Arc::clone(world));
+        });
+    }
+}
+
+impl Default for Systems {
+    fn default() -> Systems {
+        Systems {
+            storage: RwLock::new(Vec::new()),
+        }
     }
 }

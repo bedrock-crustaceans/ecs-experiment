@@ -5,9 +5,10 @@ use std::{
 use std::any::TypeId;
 
 use crate::{
-    Component, Components, EntityId, Filter, World
+    Component, Filter, World
 };
-use crate::world::TypedStorage;
+use crate::component::{Components, TypedStorage};
+use crate::entity::EntityId;
 
 trait TyEq {}
 
