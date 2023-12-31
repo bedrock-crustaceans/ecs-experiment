@@ -119,10 +119,20 @@ impl LockFlag {
 /// Additionally, tuples of mixed types are also allowed to request multiple resources at once.
 ///
 /// # Example
-/// ```rust, ignore
-/// fn health_display(query: Query<(Entity, &Health), With<Alive>>) {
-///     for (entity, health) in &query {
-///         println!("Entity {:?} has {} health points", entity.id(), health.value);
+/// ```rust
+/// # use ecs::{Component, World, Query};
+/// # struct Health { value: f32 }
+/// # impl Component for Health {}
+/// #
+/// # fn main() {
+/// #   let world = World::new();
+/// #   world.system(health_display);
+/// #   world.spawn(Health { value: 1.0 });
+/// #   world.execute();
+/// # }
+/// fn health_display(query: Query<&Health>) {
+///     for health in &query {
+///         println!("Entity has {} health points", health.value);
 ///     }
 /// }
 /// ```
