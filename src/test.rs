@@ -1,11 +1,5 @@
-use std::{any::TypeId, marker::PhantomData, ops::Deref};
-
-use crate::{
-    query::Query,
-    resource::{ResMut, Resource},
-    world::Systems,
-    Component, Filter, Sys, SysParam, World,
-};
+use std::marker::PhantomData;
+use crate::{Component, Filter, Query, Resource, World};
 
 #[derive(Debug)]
 pub struct Message1 {
@@ -38,8 +32,9 @@ pub struct Resource1 {}
 impl Resource for Resource1 {}
 
 fn test_system(query: Query<&Message2, Filter1<Message1>>) {
-    let component = query.into_iter().next().unwrap();
-    println!("{component:?}");
+    for msg in &query {
+        dbg!(msg);
+    }
 }
 
 #[tokio::test]

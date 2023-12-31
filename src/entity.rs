@@ -2,15 +2,19 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::World;
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct EntityId(pub(crate) NonZeroUsize);
 
-pub struct EntityMut<'a> {
+pub struct Entity<'a> {
     pub(crate) world: &'a World,
     pub(crate) id: EntityId,
 }
 
-impl EntityMut<'_> {
+impl Entity<'_> {
+    pub fn id(&self) -> EntityId {
+        self.id
+    }
+
     pub fn despawn(self) {
         self.world.components.despawn(self.id);
     }

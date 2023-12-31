@@ -1,7 +1,7 @@
 use std::sync::Arc;
-use crate::component::Components;
-use crate::entity::{Entities, EntityId, EntityMut};
-use crate::{NakedSys, SpawnBundle, Sys, SysContainer, Systems};
+use crate::component::{Components, SpawnBundle};
+use crate::entity::{Entities, EntityId, Entity};
+use crate::{NakedSys, Sys, SysContainer, Systems};
 
 pub struct World {
     pub(crate) entities: Entities,
@@ -14,18 +14,18 @@ impl World {
         Arc::new(World::default())
     }
 
-    pub fn spawn<B: SpawnBundle>(&self, bundle: B) -> EntityMut {
+    pub fn spawn<B: SpawnBundle>(&self, bundle: B) -> Entity {
         let entity = self.entities.alloc();
         bundle.insert_into(&self.components, entity);
 
-        EntityMut {
+        Entity {
             world: self,
             id: entity,
         }
     }
 
     #[inline]
-    pub fn spawn_empty(&self) -> EntityMut {
+    pub fn spawn_empty(&self) -> Entity {
         self.spawn(())
     }
 

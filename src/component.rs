@@ -5,6 +5,31 @@ use parking_lot::RwLock;
 use crate::Component;
 use crate::entity::EntityId;
 
+pub trait SpawnBundle {
+    fn insert_into(self, components: &Components, entity: EntityId);
+}
+
+impl SpawnBundle for () {
+    fn insert_into(self, _components: &Components, _entity: EntityId) {}
+}
+
+impl<'a, C0: Component + 'static> SpawnBundle for C0 {
+    fn insert_into(self, components: &Components, entity: EntityId) {
+        components.insert(entity, self);
+    }
+}
+
+impl<'a, C0, C1> SpawnBundle for (C0, C1)
+    where
+        C0: Component + 'static,
+        C1: Component + 'static,
+{
+    fn insert_into(self, components: &Components, entity: EntityId) {
+        components.insert(entity, self.0);
+        components.insert(entity, self.1);
+    }
+}
+
 pub trait TypelessStorage {
     fn as_any(&self) -> &dyn Any;
     fn despawn(&self, entity: EntityId) -> bool;
