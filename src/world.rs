@@ -55,10 +55,10 @@ pub trait TypelessStorage {
     fn despawn(&self, entity: EntityId) -> bool;
 }
 
-struct TypedStorage<T: Component> {
-    map: DashMap<EntityId, usize>,
-    reverse_map: RwLock<Vec<EntityId>>,
-    storage: RwLock<Vec<T>>,
+pub(crate) struct TypedStorage<T: Component> {
+    pub(crate) map: DashMap<EntityId, usize>,
+    pub(crate) reverse_map: RwLock<Vec<EntityId>>,
+    pub(crate) storage: RwLock<Vec<T>>,
 }
 
 impl<T: Component + 'static> TypedStorage<T> {
@@ -112,7 +112,6 @@ impl<C: Component + 'static> TypelessStorage for TypedStorage<C> {
         if let Some((_, index)) = self.map.remove(&entity) {
             // Drop this entity's component from storage and move the tail to its position.
             self.storage.write().swap_remove(index);
-
             // Modify mapping for affected tail entity.
             let mut reverse_lock = self.reverse_map.write();
             let modified_id = reverse_lock[reverse_lock.len() - 1];
@@ -124,34 +123,26 @@ impl<C: Component + 'static> TypelessStorage for TypedStorage<C> {
     }
 }
 
+#[derive(Default)]
 pub struct Components {
-    pub(crate) map: RwLock<HashMap<TypeId, Arc<dyn TypelessStorage + Send + Sync>>>,
+    pub(crate) map: DashMap<TypeId, Arc<dyn TypelessStorage + Send + Sync>>
 }
 
 impl Components {
     pub fn insert<T: Component + 'static>(&self, entity: EntityId, component: T) -> Option<T> {
         let type_id = TypeId::of::<T>();
 
-        let mut lock = self.map.write();
-        if let Some(store) = lock.get_mut(&type_id) {
+        if let Some(store) = self.map.get_mut(&type_id) {
             let downcast: &TypedStorage<T> = store.as_any().downcast_ref().unwrap();
             downcast.insert(entity, component)
         } else {
-            lock.insert(type_id, TypedStorage::with(entity, component));
+            self.map.insert(type_id, TypedStorage::with(entity, component));
             None
         }
     }
 
     pub fn despawn(&self, entity: EntityId) {
-        self.map.write().retain(|_, store| !store.despawn(entity) );
-    }
-}
-
-impl Default for Components {
-    fn default() -> Components {
-        Components {
-            map: RwLock::new(HashMap::new()),
-        }
+        self.map.retain(|_, store| !store.despawn(entity) );
     }
 }
 

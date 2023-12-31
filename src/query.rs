@@ -2,10 +2,12 @@ use std::{
     marker::PhantomData,
     sync::Arc
 };
+use std::any::TypeId;
 
 use crate::{
     Component, Components, EntityId, Filter, World
 };
+use crate::world::TypedStorage;
 
 trait TyEq {}
 
@@ -57,16 +59,38 @@ where
 pub trait QueryBundle: Sized {
     type NonRef;
     const SHARED: bool;
+
+    unsafe fn unlock_all(components: &Components);
 }
 
-impl<T: Component> QueryBundle for &T {
+impl<T: Component + 'static> QueryBundle for &T {
     type NonRef = T;
     const SHARED: bool = true;
+
+    unsafe fn unlock_all(components: &Components) {
+        let typeless_store = components.map.get(&TypeId::of::<T>());
+        if let Some(store) = typeless_store {
+            let typed_store = store
+                .value()
+                .as_any()
+                .downcast_ref::<TypedStorage<T>>()
+                .unwrap();
+
+            // Release the component lock
+            unsafe {
+                typed_store.storage.force_unlock_read();
+            }
+
+            dbg!("Unlocked read lock");
+        }
+    }
 }
 
 impl<T: Component> QueryBundle for &mut T {
     type NonRef = T;
     const SHARED: bool = false;
+
+    unsafe fn unlock_all(components: &Components) { todo!() }
 }
 
 impl<T1, T2> QueryBundle for (T1, T2)
@@ -76,6 +100,8 @@ where
 {
     type NonRef = (T1::NonRef, T2::NonRef);
     const SHARED: bool = T1::SHARED || T2::SHARED;
+
+    unsafe fn unlock_all(components: &Components) { todo!() }
 }
 
 pub trait FilterBundle {}
@@ -98,10 +124,10 @@ pub struct Query<'w, Q: QueryBundle, F: FilterBundle = ()> {
 
 impl<'w, C, F, N> IntoIterator for Query<'w, N, F>
 where
-    C: Component + 'w, F: FilterBundle, N: QueryBundle<NonRef = C>
+    C: Component + 'static, F: FilterBundle, N: QueryBundle<NonRef = C>
 {
     type Item =  &'w N::NonRef;
-    type IntoIter = QueryIter<'w, N, F>;
+    type IntoIter = QueryIter<'w, C, N, F>;
 
     fn into_iter(self) -> Self::IntoIter {
         QueryIter {
@@ -112,43 +138,83 @@ where
     }
 }
 
-pub struct QueryIter<'w, Q: QueryBundle, F: FilterBundle> {
+pub struct QueryIter<'w, C, Q, F>
+where
+    Q: QueryBundle<NonRef = C>,
+    F: FilterBundle
+{
     world: Arc<World>,
     index: usize,
     _marker: PhantomData<&'w (Q, F)>
 }
 
-impl<'w, C, F, N> Iterator for QueryIter<'w, N, F>
+impl<'w, C, F, N> Iterator for QueryIter<'w, C, N, F>
 where
-    C: Component + 'w, F: FilterBundle, N: QueryBundle<NonRef = C>
+    C: Component + 'static, F: FilterBundle, N: QueryBundle<NonRef = C>
 {
     type Item = &'w N::NonRef;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        let typeless_store = self.world.components.map
+            .get(&TypeId::of::<N::NonRef>());
+
+        if let Some(store) = typeless_store {
+            let typed_store = store
+                .value()
+                .as_any()
+                .downcast_ref::<TypedStorage<N::NonRef>>()
+                .unwrap();
+
+            // Lock the store while QueryIter exists.
+            let store_lock = if self.index == 0 {
+                // Acquire lock
+                typed_store.storage.read()
+            } else {
+                // Retrieve lock
+                unsafe {
+                    typed_store.storage.make_read_guard_unchecked()
+                }
+            };
+
+            let store_index = typed_store.reverse_map.read().get(self.index).map(|id| *id);
+            if store_index.is_none() {
+                // No more components remaining.
+                return None
+            };
+
+            // let store_index = store_index.unwrap();
+            let item = match N::SHARED {
+                true => {
+                    Some(unsafe {
+                        &*(&store_lock[self.index] as *const N::NonRef)
+                    })
+                    // Some(&store_lock[self.index])
+                },
+                false => {
+                    todo!("Single mutable fetch")
+                }
+            };
+
+            std::mem::forget(store_lock);
+            self.index += 1;
+            item
+        } else {
+            dbg!("yes, none");
+            // This component is not owned by any entity
+            None
+        }
     }
 }
 
-// impl<'a, C: Component + 'a, N, F: FilterBundle> Iterator for Query<'a, N, F>
-//     where N: QueryBundle<NonRef = C>
-// {
-//     type Item = &'a N::NonRef;
-//
-//     #[inline]
-//     fn next(&mut self) -> Option<Self::Item> {
-//         dbg!(std::any::type_name::<N>());
-//
-//         // let lock = self.world.components.map.read();
-//         // let storage = lock.get(&C::id())?;
-//
-//         // Some(unsafe {
-//         //     &*(storage.fetch(entity)? as *const C)
-//         // })
-//
-//         todo!();
-//         // C::fetch::<F>(entity, &*self.world.as_ref().components.map.read())
-//     }
-// }
+impl<'w, C, Q, F> Drop for QueryIter<'w, C, Q, F>
+where
+    Q: QueryBundle<NonRef = C>,
+    F: FilterBundle
+{
+    fn drop(&mut self) {
+        unsafe { Q::unlock_all(&self.world.components); }
+    }
+}
 
 impl<'a, C: QueryBundle, F: FilterBundle> Query<'a, C, F> {
     pub fn new(world: Arc<World>) -> Self {

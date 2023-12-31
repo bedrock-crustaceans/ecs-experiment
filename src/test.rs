@@ -12,20 +12,14 @@ pub struct Message1 {
     pub message: &'static str,
 }
 
-impl Component for Message1 {
-    // fn id() -> TypeId {
-    //     TypeId::of::<Message1>()
-    // }
-}
+impl Component for Message1 {}
 
 #[derive(Debug)]
-pub struct Message2 {}
-
-impl Component for Message2 {
-    // fn id() -> TypeId {
-    //     TypeId::of::<Message1>()
-    // }
+pub struct Message2 {
+    pub value: usize
 }
+
+impl Component for Message2 {}
 
 pub struct Filter1<T> {
     _marker: PhantomData<T>,
@@ -43,9 +37,9 @@ pub struct Resource1 {}
 
 impl Resource for Resource1 {}
 
-fn test_system(query: Query<&Message1, Filter1<Message1>>) {
+fn test_system(query: Query<&Message2, Filter1<Message1>>) {
     for component in query {
-        dbg!(component);
+        println!("{component:?}");
     }
 }
 
@@ -70,16 +64,22 @@ fn empty_system() {
 #[tokio::test]
 async fn test() {
     let mut world = World::new();
-    world.spawn(Message1 {
-        message: "Hello, World!",
-    });
+    // world.spawn(Message2 {
+    //     value: 1
+    // });
+    // let entity = world.spawn(Message2 {
+    //     value: 2
+    // });
+
+
 
     world.system(test_system);
-    world.system(mut_test_system);
-    world.system(tuple_test_system);
-    world.system(tuple_test_system2);
-    world.system(res_test_system);
-    world.system(empty_system);
+    // world.system(mut_test_system);
+    // world.system(tuple_test_system);
+    // world.system(tuple_test_system2);
+    // world.system(res_test_system);
+    // world.system(empty_system);
 
     world.execute();
+    // entity.despawn();
 }
