@@ -31,7 +31,7 @@ impl<'a, C0, C1> SpawnBundle for (C0, C1)
     }
 }
 
-pub trait TypelessStorage {
+pub(crate) trait TypelessStorage: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn despawn(&self, entity: EntityId) -> bool;
 }
@@ -43,8 +43,8 @@ pub(crate) struct TypedStorage<T: Component> {
 }
 
 impl<T: Component + 'static> TypedStorage<T> {
-    pub fn with(entity: EntityId, component: T) -> Arc<dyn TypelessStorage + Send + Sync> {
-        Arc::new(Self {
+    pub fn with(entity: EntityId, component: T) -> Box<dyn TypelessStorage> {
+        Box::new(Self {
             map: DashMap::from_iter([(entity, 0)]),
             reverse_map: RwLock::new(vec![entity]),
             storage: RwLock::new(vec![component])
@@ -106,7 +106,7 @@ impl<C: Component + 'static> TypelessStorage for TypedStorage<C> {
 
 #[derive(Default)]
 pub struct Components {
-    pub(crate) map: DashMap<TypeId, Arc<dyn TypelessStorage + Send + Sync>>
+    pub(crate) map: DashMap<TypeId, Box<dyn TypelessStorage>>
 }
 
 impl Components {
