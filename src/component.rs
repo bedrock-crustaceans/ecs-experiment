@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use crate::entity::EntityId;
 
-pub trait Component: Send + Sync {}
+pub trait Component: Send + Sync + 'static {}
 
 pub trait SpawnBundle {
     fn insert_into(self, components: &Components, entity: EntityId);
@@ -69,7 +69,7 @@ impl<T: Component + 'static> TypedStorage<T> {
         }
     }
 
-    pub fn fetch(&self, entity: EntityId) -> Option<&T> {
+    pub fn get(&self, entity: EntityId) -> Option<&T> {
         todo!()
     }
 }
@@ -110,7 +110,7 @@ pub struct Components {
 }
 
 impl Components {
-    pub fn insert<T: Component + 'static>(&self, entity: EntityId, component: T) -> Option<T> {
+    pub fn insert<T: Component>(&self, entity: EntityId, component: T) -> Option<T> {
         let type_id = TypeId::of::<T>();
 
         if let Some(store) = self.map.get_mut(&type_id) {
@@ -120,6 +120,11 @@ impl Components {
             self.map.insert(type_id, TypedStorage::with(entity, component));
             None
         }
+    }
+
+    pub fn get<T: Component>(&self, entity: EntityId) -> Option<&T> {
+        let type_id = TypeId::of::<T>();
+        todo!()
     }
 
     pub fn despawn(&self, entity: EntityId) {

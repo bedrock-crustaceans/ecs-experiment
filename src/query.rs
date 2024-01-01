@@ -51,6 +51,9 @@ impl<T: Component + 'static> QueryBundle for &T {
                 .unwrap();
 
             // Release the component lock
+            // SAFETY: Because of the required guarantees made by the caller.
+            // Unlocking the read lock specifically is valid because this function is only implemented
+            // for shared references, which only utilise shared locks.
             typed_store.storage.force_unlock_read();
         }
     }

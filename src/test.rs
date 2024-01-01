@@ -29,6 +29,8 @@ async fn test() {
     let entity1 = world.spawn((Health { value: 1.0 }, Alive));
     let entity2 = world.spawn(Health { value: 0.0 });
 
+    dbg!(entity1.get::<Health>());
+
     world.execute();
 
     println!("Despawn entity 2");
