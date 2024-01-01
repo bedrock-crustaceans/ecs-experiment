@@ -2,6 +2,8 @@ use std::any::TypeId;
 use std::iter::FusedIterator;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{marker::PhantomData, sync::Arc};
+use std::mem::MaybeUninit;
+use std::ptr::NonNull;
 
 use crate::component::{Component, Components, TypedStorage};
 use crate::{Entity, EntityIter, sealed, World};
@@ -235,14 +237,14 @@ where
     entity_iter: EntityIter<'query>,
     locked: &'query LockFlag,
     index: usize,
-    _marker: PhantomData<&'query (Q, F)>,
+    _marker: PhantomData<(Q, F)>,
 }
 
 impl<'query, P, F, Q> Iterator for QueryIter<'query, P, Q, F>
 where
     P: NonRefQueryParam + 'static,
     F: FilterBundle,
-    Q: QueryParams<NonRef = P>,
+    Q: QueryParams<NonRef = P>
 {
     type Item = P::Ref<'query>;
 
@@ -288,14 +290,28 @@ where
                     return None;
                 };
 
-                // let store_index = store_index.unwrap();
                 let item = match Q::SHARED {
                     true => {
-                        Some(unsafe {
-                            std::mem::transmute_copy::<P, Self::Item>(&store_lock[self.index])
-                        })
-
-                        // Some(unsafe { &*(&store_lock[self.index] as *const Q::NonRef) })
+                        // ZSTs need different treatment
+                        if std::mem::size_of::<P>() == 0 {
+                            // SAFETY: This is safe because a ZST does not need initialisation.
+                            // It is also impossible to construct unconstructable types such as empty
+                            // enums since the types have to be constructed to add them to an entity
+                            // in the first place.
+                            Some(unsafe {
+                                MaybeUninit::uninit().assume_init()
+                            })
+                        } else {
+                            // SAFETY: This is simply to get around issues with the type system.
+                            // An assertion at the start of the iterator ensures that both types below are
+                            // equal to each other. The transmuted component will also not have a longer
+                            // lifetime than the original because its lifetime will be bounded to the query.
+                            // The container of the component lives longer than the query and it can also not
+                            // be modified while this query exists.
+                            Some(unsafe {
+                                std::mem::transmute_copy::<P, Self::Item>(&store_lock[self.index])
+                            })
+                        }
                     }
                     false => {
                         todo!("Single mutable fetch")

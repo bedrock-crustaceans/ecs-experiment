@@ -13,17 +13,14 @@ struct Health {
 
 impl Component for Health {}
 
-// fn entity_system(query: Query<Entity>) {
-//     for entity in &query {
-//         entity.remove::<Alive>();
-//         dbg!(entity.id);
-//     }
-// }
+fn counter_system(query: Query<&Alive>) {
+    let count = query.into_iter().count();
+    println!("There are {count} entities alive");
+}
 
-fn counter_system(query: Query<Entity>) {
-    for counter in &query {
-        dbg!(counter.id);
-    }
+fn naming_system(query: Query<Entity>) {
+    let entity = query.into_iter().nth(2).unwrap();
+    entity.remove::<Alive>();
 }
 
 #[derive(Debug)]
@@ -35,12 +32,14 @@ impl Component for Counter {}
 async fn test() {
     let mut world = World::new();
 
-    let e1 = world.spawn(Counter(1));
-    world.spawn(Counter(2));
-    world.spawn(Counter(3));
-
-    world.scheduler.post_tick(&world);
+    world.spawn((Counter(1), Alive));
+    world.spawn((Counter(2), Alive));
+    world.spawn((Counter(3), Alive));
 
     world.system(counter_system);
+    world.system(naming_system);
+
+    world.execute().await;
+    world.scheduler.post_tick(&world);
     world.execute().await;
 }
