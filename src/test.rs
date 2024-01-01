@@ -16,7 +16,8 @@ impl Component for Health {}
 
 fn entity_system(query: Query<Entity>) {
     for entity in &query {
-        dbg!(entity.id);
+        entity.remove::<Alive>();
+        // dbg!(entity.id);
     }
 }
 

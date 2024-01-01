@@ -1,21 +1,22 @@
 use crate::component::TypedStorage;
-use crate::{Component, QueryBundle, World};
+use crate::{Component, QueryParams, World};
 use std::any::TypeId;
 use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct EntityId(pub(crate) NonZeroUsize);
 
-pub struct Entity<'world> {
-    pub(crate) world: &'world World,
+pub struct Entity {
+    pub(crate) world: Arc<World>,
     pub(crate) id: EntityId,
 }
 
-impl<'world> Entity<'world> {
+impl Entity {
     pub fn id(&self) -> EntityId {
         self.id
     }

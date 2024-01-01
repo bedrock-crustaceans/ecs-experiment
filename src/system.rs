@@ -7,7 +7,7 @@ use crate::{
     event::{Event, EventReader, EventWriter},
     query::{FilterBundle, Query},
     resource::{Res, ResMut, Resource},
-    sealed, QueryBundle, World,
+    sealed, QueryParams, World,
 };
 
 pub trait Sys {
@@ -52,7 +52,7 @@ pub trait SysParam {
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self;
 }
 
-impl<C: QueryBundle, F: FilterBundle> SysParam for Query<C, F> {
+impl<C: QueryParams, F: FilterBundle> SysParam for Query<C, F> {
     const SHARED: bool = C::SHARED;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {

@@ -9,10 +9,15 @@ use crate::sealed::Sealed;
 
 pub trait Filter {}
 
+pub trait NonRefQueryParam {}
+
+impl NonRefQueryParam for Entity {}
+impl<T: Component> NonRefQueryParam for T {}
+
 /// Represents a collection of items contained in a [`Query`].
 ///
 /// Any type that implements this trait can be used in a query.
-pub trait QueryBundle: Sized {
+pub trait QueryParams: Sized {
     /// Represents the type that this trait is implemented for, but with all references removed.
     /// For example: `&Component` becomes `Component`.
     type NonRef;
@@ -24,7 +29,7 @@ pub trait QueryBundle: Sized {
     ///
     /// The generic parameter exists to prevent consumers of the crate from calling the function.
     /// This is not done with a private supertrait since that causes all kinds of generic parameter issues
-    /// with [`QueryBundle`].
+    /// with [`QueryParams`].
     ///
     /// # Safety
     ///
@@ -35,8 +40,8 @@ pub trait QueryBundle: Sized {
     unsafe fn unlock_all<S: sealed::Sealed>(components: &Components);
 }
 
-impl<'a> QueryBundle for Entity<'a> {
-    type NonRef = Entity<'a>;
+impl QueryParams for Entity {
+    type NonRef = Entity;
 
     const SHARED: bool = true;
     const IS_ENTITY: bool = true;
@@ -45,7 +50,7 @@ impl<'a> QueryBundle for Entity<'a> {
     unsafe fn unlock_all<S: Sealed>(_components: &Components) {}
 }
 
-impl<T: Component + 'static> QueryBundle for &T {
+impl<T: Component + 'static> QueryParams for &T {
     type NonRef = T;
 
     const SHARED: bool = true;
@@ -68,7 +73,7 @@ impl<T: Component + 'static> QueryBundle for &T {
     }
 }
 
-impl<T: Component> QueryBundle for &mut T {
+impl<T: Component> QueryParams for &mut T {
     type NonRef = T;
 
     const SHARED: bool = false;
@@ -78,10 +83,10 @@ impl<T: Component> QueryBundle for &mut T {
     }
 }
 
-impl<T1, T2> QueryBundle for (T1, T2)
+impl<T1, T2> QueryParams for (T1, T2)
 where
-    T1: QueryBundle,
-    T2: QueryBundle,
+    T1: QueryParams,
+    T2: QueryParams,
 {
     type NonRef = (T1::NonRef, T2::NonRef);
 
@@ -137,11 +142,12 @@ impl LockFlag {
 /// # struct Health { value: f32 }
 /// # impl Component for Health {}
 /// #
-/// # fn main() {
+/// # #[tokio::main]
+/// # async fn main() {
 /// #   let world = World::new();
 /// #   world.system(health_display);
 /// #   world.spawn(Health { value: 1.0 });
-/// #   world.execute();
+/// #   world.execute().await;
 /// # }
 /// fn health_display(query: Query<&Health>) {
 ///     for health in &query {
@@ -157,7 +163,7 @@ impl LockFlag {
 /// Once the iterator performs its first iteration, the query turns into a locked query.
 /// This means that all component storages that the query requires will be locked.
 /// Whether this constitutes a shared lock or exclusive lock depends on the content of the query.
-pub struct Query<Q: QueryBundle, F: FilterBundle = ()> {
+pub struct Query<Q: QueryParams, F: FilterBundle = ()> {
     /// Pointer to the world that this query is directed at.
     world: Arc<World>,
     /// Whether this query has acquired locks on component storages.
@@ -166,7 +172,7 @@ pub struct Query<Q: QueryBundle, F: FilterBundle = ()> {
     _marker: PhantomData<(Q, F)>,
 }
 
-impl<Q: QueryBundle, F: FilterBundle> Query<Q, F> {
+impl<Q: QueryParams, F: FilterBundle> Query<Q, F> {
     /// Creates a new unlocked query for the specified world.
     pub(crate) fn new(world: Arc<World>) -> Self {
         Self {
@@ -177,14 +183,14 @@ impl<Q: QueryBundle, F: FilterBundle> Query<Q, F> {
     }
 }
 
-impl<'query, C, F, N> IntoIterator for &'query Query<N, F>
+impl<'query, P, F, N> IntoIterator for &'query Query<N, F>
 where
-    C: 'static,
+    P: NonRefQueryParam + 'static,
     F: FilterBundle,
-    N: QueryBundle<NonRef = C>,
+    N: QueryParams<NonRef = P>,
 {
     type Item = &'query N::NonRef;
-    type IntoIter = QueryIter<'query, C, N, F>;
+    type IntoIter = QueryIter<'query, P, N, F>;
 
     fn into_iter(self) -> Self::IntoIter {
         QueryIter {
@@ -198,7 +204,7 @@ where
 
 impl<Q, F> Drop for Query<Q, F>
 where
-    Q: QueryBundle,
+    Q: QueryParams,
     F: FilterBundle,
 {
     fn drop(&mut self) {
@@ -214,7 +220,7 @@ where
 /// An iterator over query results.
 pub struct QueryIter<'query, C, Q, F>
 where
-    Q: QueryBundle<NonRef = C>,
+    Q: QueryParams<NonRef = C>,
     F: FilterBundle,
 {
     world: Arc<World>,
@@ -225,67 +231,78 @@ where
 
 impl<'query, C, F, N> Iterator for QueryIter<'query, C, N, F>
 where
-    C: 'static,
+    C: NonRefQueryParam + 'static,
     F: FilterBundle,
-    N: QueryBundle<NonRef = C>,
+    N: QueryParams<NonRef = C>,
 {
     type Item = &'query N::NonRef;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let typeless_store = self.world.components.map.get(&TypeId::of::<N::NonRef>());
-
-        if let Some(store) = typeless_store {
-            let typed_store = store
-                .value()
-                .as_any()
-                .downcast_ref::<TypedStorage<N::NonRef>>()
-                .unwrap();
-
-            // Lock the store while QueryIter exists.
-            let store_lock = if self.index == 0 {
-                // Acquire lock
-                self.locked.flag();
-                typed_store.storage.read()
-            } else {
-                // Retrieve lock
-                // SAFETY: This is safe because this query has acquired the lock on the first iteration.
-                // Additionally, this lock has been forgotten and therefore this thread logically still owns the lock.
-                // In case a second iterator is created from the same query, the lock flag will still be set.
-                unsafe { typed_store.storage.make_read_guard_unchecked() }
-            };
-
-            let store_index = typed_store.reverse_map.read().get(self.index).map(|id| *id);
-            if store_index.is_none() {
-                // No more components remaining.
-                std::mem::forget(store_lock);
-                return None;
-            };
-
-            // let store_index = store_index.unwrap();
-            let item = match N::SHARED {
-                true => {
-                    Some(unsafe { &*(&store_lock[self.index] as *const N::NonRef) })
-                    // Some(&store_lock[self.index])
-                }
-                false => {
-                    todo!("Single mutable fetch")
-                }
-            };
-
-            std::mem::forget(store_lock);
-            self.index += 1;
-            item
+        if N::IS_ENTITY {
+            
+            todo!()
         } else {
-            // This component is not owned by any entity
-            None
+            let typeless_store = self.world.components.map.get(&TypeId::of::<N::NonRef>());
+
+            if let Some(store) = typeless_store {
+                let typed_store = store
+                    .value()
+                    .as_any()
+                    .downcast_ref::<TypedStorage<N::NonRef>>()
+                    .unwrap();
+
+                // Lock the store while QueryIter exists.
+                let store_lock = if self.index == 0 {
+                    // Acquire lock
+                    self.locked.flag();
+                    typed_store.storage.read()
+                } else {
+                    // Retrieve lock
+                    // SAFETY: This is safe because this query has acquired the lock on the first iteration.
+                    // Additionally, this lock has been forgotten and therefore this thread logically still owns the lock.
+                    // In case a second iterator is created from the same query, the lock flag will still be set.
+                    unsafe { typed_store.storage.make_read_guard_unchecked() }
+                };
+
+                let store_index = typed_store.reverse_map.read().get(self.index).map(|id| *id);
+                if store_index.is_none() {
+                    // No more components remaining.
+                    std::mem::forget(store_lock);
+                    return None;
+                };
+
+                // let store_index = store_index.unwrap();
+                let item = match N::SHARED {
+                    true => {
+                        Some(unsafe { &*(&store_lock[self.index] as *const N::NonRef) })
+                        // Some(&store_lock[self.index])
+                    }
+                    false => {
+                        todo!("Single mutable fetch")
+                    }
+                };
+
+                std::mem::forget(store_lock);
+                self.index += 1;
+                item
+            } else {
+                // This component is not owned by any entity
+                None
+            }
         }
     }
 }
 
-impl<C, F, N> FusedIterator for QueryIter<'_, C, N, F>
-where
-    C: Component + 'static,
-    F: FilterBundle,
-    N: QueryBundle<NonRef = C>,
+impl<'query, P1, P2, F, N> Iterator for QueryIter<'query, (P1, P2), N, F>
+    where
+        P1: NonRefQueryParam + 'query,
+        P2: NonRefQueryParam + 'query,
+        F: FilterBundle,
+        N: QueryParams<NonRef = (P1, P2)>,
 {
+    type Item = &'query N::NonRef;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
 }

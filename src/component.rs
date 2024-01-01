@@ -36,13 +36,13 @@ pub(crate) trait TypelessStorage: Send + Sync {
     fn remove(&self, entity: EntityId) -> bool;
 }
 
-pub(crate) struct TypedStorage<T: Component> {
+pub(crate) struct TypedStorage<T> {
     pub(crate) map: DashMap<EntityId, usize>,
     pub(crate) reverse_map: RwLock<Vec<EntityId>>,
     pub(crate) storage: RwLock<Vec<T>>,
 }
 
-impl<T: Component + 'static> TypedStorage<T> {
+impl<T: Send + Sync + 'static> TypedStorage<T> {
     pub fn with(entity: EntityId, component: T) -> Box<dyn TypelessStorage> {
         Box::new(Self {
             map: DashMap::from_iter([(entity, 0)]),
@@ -74,7 +74,7 @@ impl<T: Component + 'static> TypedStorage<T> {
     }
 }
 
-impl<C: Component> Default for TypedStorage<C> {
+impl<T> Default for TypedStorage<T> {
     fn default() -> Self {
         Self {
             map: DashMap::new(),
@@ -84,7 +84,7 @@ impl<C: Component> Default for TypedStorage<C> {
     }
 }
 
-impl<C: Component + 'static> TypelessStorage for TypedStorage<C> {
+impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -99,7 +99,7 @@ impl<C: Component + 'static> TypelessStorage for TypedStorage<C> {
             self.map.insert(modified_id, index);
             reverse_lock.swap_remove(index);
 
-            println!("Removed {:?} from {:?}", TypeId::of::<C>(), entity.0);
+            println!("Removed {:?} from {:?}", TypeId::of::<T>(), entity.0);
         }
 
         self.storage.read().is_empty()

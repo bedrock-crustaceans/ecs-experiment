@@ -16,18 +16,18 @@ impl World {
         Arc::new(World::default())
     }
 
-    pub fn spawn<B: SpawnBundle>(&self, bundle: B) -> Entity {
+    pub fn spawn<B: SpawnBundle>(self: &Arc<Self>, bundle: B) -> Entity {
         let entity = self.entities.alloc();
         bundle.insert_into(&self.components, entity);
 
         Entity {
-            world: self,
+            world: Arc::clone(self),
             id: entity,
         }
     }
 
     #[inline]
-    pub fn spawn_empty(&self) -> Entity {
+    pub fn spawn_empty(self: &Arc<Self>) -> Entity {
         self.spawn(())
     }
 
