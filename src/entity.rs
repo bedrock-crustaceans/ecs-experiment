@@ -1,6 +1,7 @@
 use crate::component::TypedStorage;
 use crate::{Component, QueryParams, World};
 use std::any::TypeId;
+use std::cell::OnceCell;
 use std::fmt::{Debug, Display};
 use std::iter::{Enumerate, FilterMap, FusedIterator};
 use std::marker::PhantomData;
@@ -9,7 +10,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use bitvec::order::Lsb0;
-use bitvec::prelude::BitRef;
+use bitvec::prelude::{BitRef, LocalBits};
 use bitvec::slice::{BitValIter, Iter};
 use bitvec::vec::BitVec;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -88,9 +89,8 @@ impl Entities {
 
     pub fn iter(&self, world: Arc<World>) -> EntityIter {
         let entities = self.indices.read();
-
         EntityIter {
-            world, entities, index: 0
+            world, entities, iter_index: 0
         }
     }
 }
@@ -98,15 +98,22 @@ impl Entities {
 pub(crate) struct EntityIter<'entts> {
     pub world: Arc<World>,
     pub entities: RwLockReadGuard<'entts, BitVec>,
-    pub index: usize
+    pub iter_index: usize
 }
 
-impl Iterator for EntityIter<'_> {
+impl<'entts> Iterator for EntityIter<'entts> {
     type Item = Entity;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.index += 1;
-        todo!()
+        let next_id = self.entities
+            .iter_ones()
+            .nth(self.iter_index)?;
+
+        self.iter_index += 1;
+        Some(Entity {
+            world: self.world.clone(),
+            id: EntityId(next_id)
+        })
     }
 }
 

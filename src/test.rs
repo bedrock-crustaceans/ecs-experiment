@@ -35,7 +35,7 @@ impl Component for Counter {}
 async fn test() {
     let mut world = World::new();
 
-    world.spawn(Counter(1));
+    let e1 = world.spawn(Counter(1));
     world.spawn(Counter(2));
     world.spawn(Counter(3));
 
