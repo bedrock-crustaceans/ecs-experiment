@@ -4,15 +4,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::component::{Component, Components, TypedStorage};
-use crate::{Entity, sealed, World};
+use crate::{Entity, EntityIter, sealed, World};
 use crate::sealed::Sealed;
 
 pub trait Filter {}
 
-pub trait NonRefQueryParam {}
+pub trait NonRefQueryParam {
+    type Ref<'q>;
+}
 
-impl NonRefQueryParam for Entity {}
-impl<T: Component> NonRefQueryParam for T {}
+impl NonRefQueryParam for Entity {
+    type Ref<'q> = Self;
+}
+
+impl<T: Component> NonRefQueryParam for T {
+    type Ref<'q> = &'q T;
+}
 
 /// Represents a collection of items contained in a [`Query`].
 ///
@@ -189,12 +196,13 @@ where
     F: FilterBundle,
     N: QueryParams<NonRef = P>,
 {
-    type Item = &'query N::NonRef;
+    type Item = P::Ref<'query>;
     type IntoIter = QueryIter<'query, P, N, F>;
 
     fn into_iter(self) -> Self::IntoIter {
         QueryIter {
             world: self.world.clone(),
+            entity_iter: self.world.entities.iter(self.world.clone()),
             locked: &self.locked,
             index: 0,
             _marker: PhantomData,
@@ -224,6 +232,7 @@ where
     F: FilterBundle,
 {
     world: Arc<World>,
+    entity_iter: EntityIter<'query>,
     locked: &'query LockFlag,
     index: usize,
     _marker: PhantomData<&'query (Q, F)>,
@@ -235,13 +244,21 @@ where
     F: FilterBundle,
     Q: QueryParams<NonRef = P>,
 {
-    type Item = &'query P;
+    type Item = P::Ref<'query>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if Q::IS_ENTITY {
+            assert_eq!(TypeId::of::<P::Ref<'static>>(), TypeId::of::<Entity>());
 
-            todo!()
+            self.entity_iter.next().map(|entity| unsafe {
+                let cast = std::mem::transmute_copy::<Entity, Self::Item>(&entity);
+                std::mem::forget(entity);
+
+                cast
+            })
         } else {
+            assert_eq!(TypeId::of::<P::Ref<'static>>(), TypeId::of::<&P>());
+
             let typeless_store = self.world.components.map.get(&TypeId::of::<Q::NonRef>());
 
             if let Some(store) = typeless_store {
@@ -274,8 +291,11 @@ where
                 // let store_index = store_index.unwrap();
                 let item = match Q::SHARED {
                     true => {
-                        Some(unsafe { &*(&store_lock[self.index] as *const Q::NonRef) })
-                        // Some(&store_lock[self.index])
+                        Some(unsafe {
+                            std::mem::transmute_copy::<P, Self::Item>(&store_lock[self.index])
+                        })
+
+                        // Some(unsafe { &*(&store_lock[self.index] as *const Q::NonRef) })
                     }
                     false => {
                         todo!("Single mutable fetch")

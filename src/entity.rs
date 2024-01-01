@@ -2,13 +2,17 @@ use crate::component::TypedStorage;
 use crate::{Component, QueryParams, World};
 use std::any::TypeId;
 use std::fmt::{Debug, Display};
+use std::iter::{Enumerate, FilterMap, FusedIterator};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use bitvec::order::Lsb0;
+use bitvec::prelude::BitRef;
+use bitvec::slice::{BitValIter, Iter};
 use bitvec::vec::BitVec;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct EntityId(pub(crate) usize);
@@ -46,7 +50,7 @@ impl Entity {
 }
 
 #[derive(Default)]
-pub struct Entities {
+pub(crate) struct Entities {
     indices: RwLock<BitVec>
 }
 
@@ -81,4 +85,29 @@ impl Entities {
     pub fn free(&self, entity: EntityId) {
         self.indices.write().set(entity.0, false);
     }
+
+    pub fn iter(&self, world: Arc<World>) -> EntityIter {
+        let entities = self.indices.read();
+
+        EntityIter {
+            world, entities, index: 0
+        }
+    }
 }
+
+pub(crate) struct EntityIter<'entts> {
+    pub world: Arc<World>,
+    pub entities: RwLockReadGuard<'entts, BitVec>,
+    pub index: usize
+}
+
+impl Iterator for EntityIter<'_> {
+    type Item = Entity;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.index += 1;
+        todo!()
+    }
+}
+
+impl FusedIterator for EntityIter<'_> {}
