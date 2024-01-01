@@ -1,12 +1,12 @@
-use std::sync::Arc;
 use crate::component::{Components, SpawnBundle};
-use crate::entity::{Entities, EntityId, Entity};
+use crate::entity::{Entities, Entity, EntityId};
 use crate::{NakedSys, Sys, SysContainer, Systems};
+use std::sync::Arc;
 
 pub struct World {
     pub(crate) entities: Entities,
     pub(crate) components: Components,
-    systems: Systems,
+    pub(crate) systems: Systems,
 }
 
 impl World {
@@ -43,8 +43,8 @@ impl World {
         self.systems.push(wrapped);
     }
 
-    pub fn execute(self: &Arc<Self>) {
-        self.systems.call(self);
+    pub async fn execute(self: &Arc<Self>) {
+        self.systems.call(self).await;
     }
 }
 

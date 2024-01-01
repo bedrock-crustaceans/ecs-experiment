@@ -1,11 +1,11 @@
+use crate::component::TypedStorage;
+use crate::{Component, QueryBundle, World};
 use std::any::TypeId;
 use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::{Component, QueryBundle, World};
-use crate::component::TypedStorage;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct EntityId(pub(crate) NonZeroUsize);
@@ -73,6 +73,10 @@ impl<'world> Entity<'world> {
         self.world.components.get(self.id)
     }
 
+    pub fn get_mut<T: Component>(&self) -> Option<&mut T> {
+        self.world.components.get_mut(self.id)
+    }
+
     // pub fn get<T: Component>(&self) -> Option<StorageLockReadGuard<'world, T>> {
     //     let type_id = TypeId::of::<T>();
     //     let store_kv = self.world.components.map.get(&type_id)?;
@@ -123,7 +127,7 @@ impl<'world> Entity<'world> {
 }
 
 pub struct Entities {
-    next_index: AtomicUsize
+    next_index: AtomicUsize,
 }
 
 impl Entities {
@@ -139,7 +143,7 @@ impl Entities {
 impl Default for Entities {
     fn default() -> Entities {
         Entities {
-            next_index: AtomicUsize::new(1)
+            next_index: AtomicUsize::new(1),
         }
     }
 }

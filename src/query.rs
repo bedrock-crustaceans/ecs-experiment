@@ -1,13 +1,10 @@
-use std::{
-    marker::PhantomData,
-    sync::Arc
-};
 use std::any::TypeId;
 use std::iter::FusedIterator;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::{marker::PhantomData, sync::Arc};
 
-use crate::{sealed, World};
 use crate::component::{Component, Components, TypedStorage};
+use crate::{sealed, World};
 
 pub trait Filter {}
 
@@ -63,7 +60,9 @@ impl<T: Component> QueryBundle for &mut T {
     type NonRef = T;
     const SHARED: bool = false;
 
-    unsafe fn unlock_all<S: sealed::Sealed>(components: &Components) { todo!() }
+    unsafe fn unlock_all<S: sealed::Sealed>(components: &Components) {
+        todo!()
+    }
 }
 
 impl<T1, T2> QueryBundle for (T1, T2)
@@ -74,7 +73,9 @@ where
     type NonRef = (T1::NonRef, T2::NonRef);
     const SHARED: bool = T1::SHARED || T2::SHARED;
 
-    unsafe fn unlock_all<S: sealed::Sealed>(components: &Components) { todo!() }
+    unsafe fn unlock_all<S: sealed::Sealed>(components: &Components) {
+        todo!()
+    }
 }
 
 pub trait FilterBundle {}
@@ -94,7 +95,7 @@ where
 /// set to true. This type enforces that rule by not providing any methods to set it to false.
 #[derive(Default)]
 struct LockFlag {
-    flag: AtomicBool
+    flag: AtomicBool,
 }
 
 impl LockFlag {
@@ -164,9 +165,11 @@ impl<Q: QueryBundle, F: FilterBundle> Query<Q, F> {
 
 impl<'query, C, F, N> IntoIterator for &'query Query<N, F>
 where
-    C: Component + 'static, F: FilterBundle, N: QueryBundle<NonRef = C>
+    C: Component + 'static,
+    F: FilterBundle,
+    N: QueryBundle<NonRef = C>,
 {
-    type Item =  &'query N::NonRef;
+    type Item = &'query N::NonRef;
     type IntoIter = QueryIter<'query, C, N, F>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -174,7 +177,7 @@ where
             world: self.world.clone(),
             locked: &self.locked,
             index: 0,
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 }
@@ -182,16 +185,14 @@ where
 impl<Q, F> Drop for Query<Q, F>
 where
     Q: QueryBundle,
-    F: FilterBundle
+    F: FilterBundle,
 {
     fn drop(&mut self) {
         if self.locked.is_flagged() {
             // SAFETY: This is safe because the lock flag has been flagged.
             // This flag means that the store of every component type is currently locked.
             // It is therefore to unlock all of the stores.
-            unsafe {
-                Q::unlock_all::<sealed::Sealer>(&self.world.components)
-            }
+            unsafe { Q::unlock_all::<sealed::Sealer>(&self.world.components) }
         }
     }
 }
@@ -200,23 +201,24 @@ where
 pub struct QueryIter<'query, C, Q, F>
 where
     Q: QueryBundle<NonRef = C>,
-    F: FilterBundle
+    F: FilterBundle,
 {
     world: Arc<World>,
     locked: &'query LockFlag,
     index: usize,
-    _marker: PhantomData<&'query (Q, F)>
+    _marker: PhantomData<&'query (Q, F)>,
 }
 
 impl<'query, C, F, N> Iterator for QueryIter<'query, C, N, F>
 where
-    C: Component + 'static, F: FilterBundle, N: QueryBundle<NonRef = C>
+    C: Component + 'static,
+    F: FilterBundle,
+    N: QueryBundle<NonRef = C>,
 {
     type Item = &'query N::NonRef;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let typeless_store = self.world.components.map
-            .get(&TypeId::of::<N::NonRef>());
+        let typeless_store = self.world.components.map.get(&TypeId::of::<N::NonRef>());
 
         if let Some(store) = typeless_store {
             let typed_store = store
@@ -235,26 +237,22 @@ where
                 // SAFETY: This is safe because this query has acquired the lock on the first iteration.
                 // Additionally, this lock has been forgotten and therefore this thread logically still owns the lock.
                 // In case a second iterator is created from the same query, the lock flag will still be set.
-                unsafe {
-                    typed_store.storage.make_read_guard_unchecked()
-                }
+                unsafe { typed_store.storage.make_read_guard_unchecked() }
             };
 
             let store_index = typed_store.reverse_map.read().get(self.index).map(|id| *id);
             if store_index.is_none() {
                 // No more components remaining.
                 std::mem::forget(store_lock);
-                return None
+                return None;
             };
 
             // let store_index = store_index.unwrap();
             let item = match N::SHARED {
                 true => {
-                    Some(unsafe {
-                        &*(&store_lock[self.index] as *const N::NonRef)
-                    })
+                    Some(unsafe { &*(&store_lock[self.index] as *const N::NonRef) })
                     // Some(&store_lock[self.index])
-                },
+                }
                 false => {
                     todo!("Single mutable fetch")
                 }
@@ -272,4 +270,8 @@ where
 
 impl<C, F, N> FusedIterator for QueryIter<'_, C, N, F>
 where
-    C: Component + 'static, F: FilterBundle, N: QueryBundle<NonRef = C> {}
+    C: Component + 'static,
+    F: FilterBundle,
+    N: QueryBundle<NonRef = C>,
+{
+}

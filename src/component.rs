@@ -1,8 +1,8 @@
-use std::any::{Any, TypeId};
-use std::sync::Arc;
+use crate::entity::EntityId;
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use crate::entity::EntityId;
+use std::any::{Any, TypeId};
+use std::sync::Arc;
 
 pub trait Component: Send + Sync + 'static {}
 
@@ -21,9 +21,9 @@ impl<'a, C0: Component + 'static> SpawnBundle for C0 {
 }
 
 impl<'a, C0, C1> SpawnBundle for (C0, C1)
-    where
-        C0: Component + 'static,
-        C1: Component + 'static,
+where
+    C0: Component + 'static,
+    C1: Component + 'static,
 {
     fn insert_into(self, components: &Components, entity: EntityId) {
         components.insert(entity, self.0);
@@ -47,7 +47,7 @@ impl<T: Component + 'static> TypedStorage<T> {
         Box::new(Self {
             map: DashMap::from_iter([(entity, 0)]),
             reverse_map: RwLock::new(vec![entity]),
-            storage: RwLock::new(vec![component])
+            storage: RwLock::new(vec![component]),
         })
     }
 
@@ -106,7 +106,7 @@ impl<C: Component + 'static> TypelessStorage for TypedStorage<C> {
 
 #[derive(Default)]
 pub struct Components {
-    pub(crate) map: DashMap<TypeId, Box<dyn TypelessStorage>>
+    pub(crate) map: DashMap<TypeId, Box<dyn TypelessStorage>>,
 }
 
 impl Components {
@@ -117,17 +117,26 @@ impl Components {
             let downcast: &TypedStorage<T> = store.as_any().downcast_ref().unwrap();
             downcast.insert(entity, component)
         } else {
-            self.map.insert(type_id, TypedStorage::with(entity, component));
+            self.map
+                .insert(type_id, TypedStorage::with(entity, component));
             None
         }
     }
 
+    /// # Warning
     pub fn get<T: Component>(&self, entity: EntityId) -> Option<&T> {
         let type_id = TypeId::of::<T>();
+        let store_kv = self.map.get(&type_id)?;
+        let typed_store: &TypedStorage<T> = store_kv.value().as_any().downcast_ref().unwrap();
+
+        todo!()
+    }
+
+    pub fn get_mut<T: Component>(&self, entity: EntityId) -> Option<&mut T> {
         todo!()
     }
 
     pub fn despawn(&self, entity: EntityId) {
-        self.map.retain(|_, store| !store.despawn(entity) );
+        self.map.retain(|_, store| !store.despawn(entity));
     }
 }

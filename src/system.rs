@@ -1,7 +1,14 @@
-use std::{marker::PhantomData, sync::Arc};
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use parking_lot::RwLock;
+use std::{marker::PhantomData, sync::Arc};
 
-use crate::{event::{Event, EventReader, EventWriter}, query::{FilterBundle, Query}, resource::{Res, ResMut, Resource}, QueryBundle, World, sealed};
+use crate::{
+    event::{Event, EventReader, EventWriter},
+    query::{FilterBundle, Query},
+    resource::{Res, ResMut, Resource},
+    sealed, QueryBundle, World,
+};
 
 pub trait Sys {
     fn call(&self, world: Arc<World>);
@@ -142,11 +149,23 @@ impl Systems {
         self.storage.write().push(system);
     }
 
-    pub fn call(&self, world: &Arc<World>) {
-        let lock = self.storage.read();
-        lock.iter().for_each(|sys| {
-            sys.call(Arc::clone(world));
-        });
+    pub async fn call(&self, world: &Arc<World>) {
+        let mut futures = FuturesUnordered::new();
+
+        // FIXME: Reduce the amount of arc cloning required. I could maybe remove it altogether.
+        for sys_index in 0..self.storage.read().len() {
+            let world = Arc::clone(world);
+            futures.push(tokio::spawn(async move {
+                let lock = world.systems.storage.read();
+                let sys = &lock[sys_index];
+
+                let clone = world.clone();
+                sys.call(clone);
+            }));
+        }
+
+        // Run all futures to completion
+        while let Some(_) = futures.next().await {}
     }
 }
 
