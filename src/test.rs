@@ -14,39 +14,19 @@ struct Health {
 
 impl Component for Health {}
 
-fn health_system(query: Query<&Health>) {
-    for health in &query {
-        println!("Entity has {} health", health.value);
-        
+fn entity_system(query: Query<Entity>) {
+    for entity in &query {
+        dbg!(entity.id);
     }
 }
 
 #[tokio::test]
 async fn test() {
     let mut world = World::new();
-    let e = world.spawn((Alive, Health { value: 1.0 }));
-
-    e.remove::<Alive>();
-    // e.remove::<Health>();
+    let ent = world.spawn((Alive, Health { value: 1.0 }));
 
     world.scheduler.post_tick(&world);
 
-    world.system(health_system);
+    world.system(entity_system);
     world.execute().await;
-
-    //
-    // println!("\n\nSpawn 2 entities");
-    // let entity1 = world.spawn((Health { value: 1.0 }, Alive));
-    // let entity2 = world.spawn(Health { value: 0.0 });
-    //
-    // // dbg!(entity1.get::<Health>());
-    //
-    // world.execute().await;
-    //
-    // println!("Despawn entity 2");
-    // entity2.despawn();
-    //
-    // world.execute().await;
-    //
-    // println!();
 }

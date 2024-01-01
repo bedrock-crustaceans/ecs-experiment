@@ -4,7 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::component::{Component, Components, TypedStorage};
-use crate::{sealed, World};
+use crate::{Entity, sealed, World};
+use crate::sealed::Sealed;
 
 pub trait Filter {}
 
@@ -15,10 +16,10 @@ pub trait QueryBundle: Sized {
     /// Represents the type that this trait is implemented for, but with all references removed.
     /// For example: `&Component` becomes `Component`.
     type NonRef;
-
     /// Whether the query contains only shared references.
     const SHARED: bool;
-
+    /// Whether this type is [`Entity`].
+    const IS_ENTITY: bool = false;
     /// Unlocks all used component storages.
     ///
     /// The generic parameter exists to prevent consumers of the crate from calling the function.
@@ -34,8 +35,19 @@ pub trait QueryBundle: Sized {
     unsafe fn unlock_all<S: sealed::Sealed>(components: &Components);
 }
 
+impl<'a> QueryBundle for Entity<'a> {
+    type NonRef = Entity<'a>;
+
+    const SHARED: bool = true;
+    const IS_ENTITY: bool = true;
+
+    // Requesting entities uses no locking, so this function is empty.
+    unsafe fn unlock_all<S: Sealed>(_components: &Components) {}
+}
+
 impl<T: Component + 'static> QueryBundle for &T {
     type NonRef = T;
+
     const SHARED: bool = true;
 
     unsafe fn unlock_all<S: sealed::Sealed>(components: &Components) {
@@ -58,6 +70,7 @@ impl<T: Component + 'static> QueryBundle for &T {
 
 impl<T: Component> QueryBundle for &mut T {
     type NonRef = T;
+
     const SHARED: bool = false;
 
     unsafe fn unlock_all<S: sealed::Sealed>(components: &Components) {
@@ -71,6 +84,7 @@ where
     T2: QueryBundle,
 {
     type NonRef = (T1::NonRef, T2::NonRef);
+
     const SHARED: bool = T1::SHARED || T2::SHARED;
 
     unsafe fn unlock_all<S: sealed::Sealed>(components: &Components) {
@@ -165,7 +179,7 @@ impl<Q: QueryBundle, F: FilterBundle> Query<Q, F> {
 
 impl<'query, C, F, N> IntoIterator for &'query Query<N, F>
 where
-    C: Component + 'static,
+    C: 'static,
     F: FilterBundle,
     N: QueryBundle<NonRef = C>,
 {
@@ -211,7 +225,7 @@ where
 
 impl<'query, C, F, N> Iterator for QueryIter<'query, C, N, F>
 where
-    C: Component + 'static,
+    C: 'static,
     F: FilterBundle,
     N: QueryBundle<NonRef = C>,
 {
