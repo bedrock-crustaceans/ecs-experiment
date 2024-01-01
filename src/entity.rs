@@ -7,9 +7,11 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use bitvec::vec::BitVec;
+use parking_lot::RwLock;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct EntityId(pub(crate) NonZeroUsize);
+pub struct EntityId(pub(crate) usize);
 
 pub struct Entity {
     pub(crate) world: Arc<World>,
@@ -43,8 +45,9 @@ impl Entity {
     }
 }
 
+#[derive(Default)]
 pub struct Entities {
-    next_index: AtomicUsize,
+    indices: RwLock<BitVec>
 }
 
 impl Entities {
@@ -53,14 +56,29 @@ impl Entities {
     }
 
     pub fn alloc(&self) -> EntityId {
-        EntityId(NonZeroUsize::new(self.next_index.fetch_add(1, Ordering::Relaxed)).unwrap())
-    }
-}
+        let gap = self.indices
+            .read()
+            .iter()
+            .by_vals()
+            .enumerate()
+            .find_map(|(i, v)| if v { None } else { Some(i) });
 
-impl Default for Entities {
-    fn default() -> Entities {
-        Entities {
-            next_index: AtomicUsize::new(1),
-        }
+        let id = if let Some(gap) = gap {
+            self.indices.write().set(gap, true);
+
+            gap
+        } else {
+            let mut lock = self.indices.write();
+            let len = lock.len();
+            lock.push(true);
+
+            len
+        };
+
+        EntityId(id)
+    }
+
+    pub fn free(&self, entity: EntityId) {
+        self.indices.write().set(entity.0, false);
     }
 }

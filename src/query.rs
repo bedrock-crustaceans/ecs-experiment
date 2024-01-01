@@ -218,9 +218,9 @@ where
 }
 
 /// An iterator over query results.
-pub struct QueryIter<'query, C, Q, F>
+pub struct QueryIter<'query, P, Q, F>
 where
-    Q: QueryParams<NonRef = C>,
+    Q: QueryParams<NonRef = P>,
     F: FilterBundle,
 {
     world: Arc<World>,
@@ -229,26 +229,26 @@ where
     _marker: PhantomData<&'query (Q, F)>,
 }
 
-impl<'query, C, F, N> Iterator for QueryIter<'query, C, N, F>
+impl<'query, P, F, Q> Iterator for QueryIter<'query, P, Q, F>
 where
-    C: NonRefQueryParam + 'static,
+    P: NonRefQueryParam + 'static,
     F: FilterBundle,
-    N: QueryParams<NonRef = C>,
+    Q: QueryParams<NonRef = P>,
 {
-    type Item = &'query N::NonRef;
+    type Item = &'query P;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if N::IS_ENTITY {
-            
+        if Q::IS_ENTITY {
+
             todo!()
         } else {
-            let typeless_store = self.world.components.map.get(&TypeId::of::<N::NonRef>());
+            let typeless_store = self.world.components.map.get(&TypeId::of::<Q::NonRef>());
 
             if let Some(store) = typeless_store {
                 let typed_store = store
                     .value()
                     .as_any()
-                    .downcast_ref::<TypedStorage<N::NonRef>>()
+                    .downcast_ref::<TypedStorage<P>>()
                     .unwrap();
 
                 // Lock the store while QueryIter exists.
@@ -272,9 +272,9 @@ where
                 };
 
                 // let store_index = store_index.unwrap();
-                let item = match N::SHARED {
+                let item = match Q::SHARED {
                     true => {
-                        Some(unsafe { &*(&store_lock[self.index] as *const N::NonRef) })
+                        Some(unsafe { &*(&store_lock[self.index] as *const Q::NonRef) })
                         // Some(&store_lock[self.index])
                     }
                     false => {

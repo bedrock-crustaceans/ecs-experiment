@@ -98,8 +98,6 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
             let modified_id = reverse_lock[reverse_lock.len() - 1];
             self.map.insert(modified_id, index);
             reverse_lock.swap_remove(index);
-
-            println!("Removed {:?} from {:?}", TypeId::of::<T>(), entity.0);
         }
 
         self.storage.read().is_empty()
