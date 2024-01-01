@@ -77,6 +77,15 @@ impl<'world> Entity<'world> {
         self.world.components.get_mut(self.id)
     }
 
+    /// Removes a component from an entity. The actual change is only performed
+    /// after all systems have completed running in order to prevent issues.
+    ///
+    /// If the entity did not have this component in the first place nothing will happen.
+    pub fn remove<T: Component>(&self) {
+        let type_id = TypeId::of::<T>();
+        self.world.scheduler.remove_component(self.id, type_id);
+    }
+
     // pub fn get<T: Component>(&self) -> Option<StorageLockReadGuard<'world, T>> {
     //     let type_id = TypeId::of::<T>();
     //     let store_kv = self.world.components.map.get(&type_id)?;

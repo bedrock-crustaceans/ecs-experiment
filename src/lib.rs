@@ -8,6 +8,7 @@ mod query;
 mod resource;
 mod system;
 mod world;
+mod scheduler;
 
 pub use component::*;
 pub use entity::*;

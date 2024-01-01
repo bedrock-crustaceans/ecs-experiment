@@ -2,11 +2,13 @@ use crate::component::{Components, SpawnBundle};
 use crate::entity::{Entities, Entity, EntityId};
 use crate::{NakedSys, Sys, SysContainer, Systems};
 use std::sync::Arc;
+use crate::scheduler::Scheduler;
 
 pub struct World {
     pub(crate) entities: Entities,
     pub(crate) components: Components,
     pub(crate) systems: Systems,
+    pub(crate) scheduler: Scheduler
 }
 
 impl World {
@@ -54,6 +56,7 @@ impl Default for World {
             entities: Entities::default(),
             components: Components::default(),
             systems: Systems::default(),
+            scheduler: Scheduler::default()
         }
     }
 }

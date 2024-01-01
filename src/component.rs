@@ -33,7 +33,7 @@ where
 
 pub(crate) trait TypelessStorage: Send + Sync {
     fn as_any(&self) -> &dyn Any;
-    fn despawn(&self, entity: EntityId) -> bool;
+    fn remove(&self, entity: EntityId) -> bool;
 }
 
 pub(crate) struct TypedStorage<T: Component> {
@@ -89,7 +89,7 @@ impl<C: Component + 'static> TypelessStorage for TypedStorage<C> {
         self
     }
 
-    fn despawn(&self, entity: EntityId) -> bool {
+    fn remove(&self, entity: EntityId) -> bool {
         if let Some((_, index)) = self.map.remove(&entity) {
             // Drop this entity's component from storage and move the tail to its position.
             self.storage.write().swap_remove(index);
@@ -98,6 +98,8 @@ impl<C: Component + 'static> TypelessStorage for TypedStorage<C> {
             let modified_id = reverse_lock[reverse_lock.len() - 1];
             self.map.insert(modified_id, index);
             reverse_lock.swap_remove(index);
+
+            println!("Removed {:?} from {:?}", TypeId::of::<C>(), entity.0);
         }
 
         self.storage.read().is_empty()
@@ -137,6 +139,6 @@ impl Components {
     }
 
     pub fn despawn(&self, entity: EntityId) {
-        self.map.retain(|_, store| !store.despawn(entity));
+        self.map.retain(|_, store| !store.remove(entity));
     }
 }
