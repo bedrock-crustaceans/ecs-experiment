@@ -19,8 +19,11 @@ fn counter_system(query: Query<&Alive>) {
 }
 
 fn naming_system(query: Query<Entity>) {
-    let entity = query.into_iter().nth(2).unwrap();
-    entity.remove::<Alive>();
+    println!("There exist {} entities", query.into_iter().count());
+    if let Some(entity) = query.into_iter().nth(2) {
+        entity.despawn();
+    }
+    query.into_iter().nth(1).unwrap().remove::<Alive>();
 }
 
 #[derive(Debug)]
@@ -39,7 +42,6 @@ async fn test() {
     world.system(counter_system);
     world.system(naming_system);
 
-    world.execute().await;
-    world.scheduler.post_tick(&world);
-    world.execute().await;
+    world.tick().await;
+    world.tick().await;
 }

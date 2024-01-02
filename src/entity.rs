@@ -1,17 +1,8 @@
-use crate::component::TypedStorage;
 use crate::{Component, QueryParams, World};
 use std::any::TypeId;
-use std::cell::OnceCell;
 use std::fmt::{Debug, Display};
 use std::iter::{Enumerate, FilterMap, FusedIterator};
-use std::marker::PhantomData;
-use std::num::NonZeroUsize;
-use std::ops::Deref;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use bitvec::order::Lsb0;
-use bitvec::prelude::{BitRef, LocalBits};
-use bitvec::slice::{BitValIter, Iter};
 use bitvec::vec::BitVec;
 use parking_lot::{RwLock, RwLockReadGuard};
 
@@ -28,8 +19,10 @@ impl Entity {
         self.id
     }
 
+    /// Despawns the entity, invalidating its ID and removing all its components from storage.
+    /// The actual change is only performed after all systems have completed.
     pub fn despawn(self) {
-        self.world.components.despawn(self.id);
+        self.world.scheduler.schedule_despawn(self.id);
     }
 
     pub fn get<T: Component>(&self) -> Option<&T> {
@@ -43,10 +36,10 @@ impl Entity {
     /// Removes a component from an entity. The actual change is only performed
     /// after all systems have completed running in order to prevent issues.
     ///
-    /// If the entity did not have this component in the first place nothing will happen.
+    /// If the entity did not have this component in the first place this does nothing.
     pub fn remove<T: Component>(&self) {
         let type_id = TypeId::of::<T>();
-        self.world.scheduler.remove_component(self.id, type_id);
+        self.world.scheduler.schedule_remove_component(self.id, type_id);
     }
 }
 
@@ -85,6 +78,13 @@ impl Entities {
 
     pub fn free(&self, entity: EntityId) {
         self.indices.write().set(entity.0, false);
+    }
+
+    pub fn free_many<I: Iterator<Item = EntityId>>(&self, iter: I) {
+        let mut lock = self.indices.write();
+        for entity in iter {
+            lock.set(entity.0, false);
+        }
     }
 
     pub fn iter(&self, world: Arc<World>) -> EntityIter {

@@ -31,10 +31,6 @@ impl World {
         self.spawn(())
     }
 
-    pub fn despawn(&self, entity: EntityId) {
-        self.components.despawn(entity);
-    }
-
     pub fn system<P, S>(&self, system: S)
     where
         P: Send + Sync + 'static,
@@ -45,8 +41,10 @@ impl World {
         self.systems.push(wrapped);
     }
 
-    pub async fn execute(self: &Arc<Self>) {
+    pub async fn tick(self: &Arc<Self>) {
+        self.scheduler.pre_tick(self);
         self.systems.call(self).await;
+        self.scheduler.post_tick(self);
     }
 }
 

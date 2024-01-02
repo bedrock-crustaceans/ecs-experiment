@@ -156,7 +156,7 @@ impl LockFlag {
 /// #   let world = World::new();
 /// #   world.system(health_display);
 /// #   world.spawn(Health { value: 1.0 });
-/// #   world.execute().await;
+/// #   world.tick().await;
 /// # }
 /// fn health_display(query: Query<&Health>) {
 ///     for health in &query {

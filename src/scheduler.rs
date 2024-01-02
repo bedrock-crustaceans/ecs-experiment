@@ -1,17 +1,15 @@
 use std::any::TypeId;
 use std::collections::HashSet;
 use std::sync::Arc;
-use dashmap::DashMap;
-use parking_lot::Mutex;
+use dashmap::{DashMap, DashSet};
 use crate::{Component, EntityId, World};
 
 #[derive(Default)]
 pub struct Scheduler {
-    /// When a component is removed from an entity inside of a system, the storage is locked
-    /// and therefore cannot be modified. This means that removing the component immediately
-    /// would cause a deadlock, therefore this removal operation queue exists which destroys
-    /// all components after the systems have finished.
-    removal_queue: DashMap<TypeId, HashSet<EntityId>>
+    /// Keeps track of entities that need to be despawned at the end of a tick.
+    despawn_queue: DashSet<EntityId>,
+    /// Keeps track of components to remove from entities at the end of a tick.
+    remove_queue: DashMap<TypeId, HashSet<EntityId>>
 }
 
 impl Scheduler {
@@ -19,8 +17,12 @@ impl Scheduler {
         Self::default()
     }
 
-    pub fn remove_component(&self, entity: EntityId, type_id: TypeId) {
-        let mut entry = self.removal_queue
+    pub fn schedule_despawn(&self, entity: EntityId) {
+        self.despawn_queue.insert(entity);
+    }
+
+    pub fn schedule_remove_component(&self, entity: EntityId, type_id: TypeId) {
+        let mut entry = self.remove_queue
             .entry(type_id)
             .or_insert_with(HashSet::new);
 
@@ -33,10 +35,11 @@ impl Scheduler {
 
     pub fn post_tick(&self, world: &Arc<World>) {
         self.tick_removal(world);
+        self.tick_despawn(world);
     }
 
     fn tick_removal(&self, world: &Arc<World>) {
-        self.removal_queue.retain(|type_id, entities| {
+        self.remove_queue.retain(|type_id, entities| {
             if let Some(store_kv) = world.components.map.get(type_id) {
                 for entity in entities.iter() {
                     store_kv.value().remove(*entity);
@@ -45,5 +48,14 @@ impl Scheduler {
 
             false
         });
+    }
+
+    fn tick_despawn(&self, world: &Arc<World>) {
+        world.entities.free_many(self.despawn_queue.iter().map(|kv| *kv.key()));
+        self.despawn_queue
+            .retain(|entity| {
+                world.components.despawn(*entity);
+                false
+            });
     }
 }
