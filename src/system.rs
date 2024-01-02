@@ -3,12 +3,7 @@ use futures::StreamExt;
 use parking_lot::RwLock;
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::{
-    event::{Event, EventReader, EventWriter},
-    query::{FilterBundle, Query},
-    resource::{Res, ResMut, Resource},
-    sealed, QueryParams, World,
-};
+use crate::{event::{Event, EventReader, EventWriter}, query::{Query}, resource::{Res, ResMut, Resource}, sealed, QueryParams, World, FilterParams};
 
 pub trait Sys {
     fn call(&self, world: Arc<World>);
@@ -52,7 +47,7 @@ pub trait SysParam {
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self;
 }
 
-impl<C: QueryParams, F: FilterBundle> SysParam for Query<C, F> {
+impl<C: QueryParams, F: FilterParams> SysParam for Query<C, F> {
     const SHARED: bool = C::SHARED;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {

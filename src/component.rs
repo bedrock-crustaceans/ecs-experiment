@@ -34,6 +34,7 @@ where
 pub(crate) trait TypelessStorage: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn remove(&self, entity: EntityId) -> bool;
+    fn has_entity(&self, entity: EntityId) -> bool;
 }
 
 pub(crate) struct TypedStorage<T> {
@@ -110,6 +111,10 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
 
         self.storage.read().is_empty()
     }
+
+    fn has_entity(&self, entity: EntityId) -> bool {
+        self.map.contains_key(&entity)
+    }
 }
 
 #[derive(Default)]
@@ -142,6 +147,15 @@ impl Components {
 
     pub fn get_mut<T: Component>(&self, entity: EntityId) -> Option<&mut T> {
         todo!()
+    }
+
+    pub fn has_component<T: Component>(&self, entity: EntityId) -> bool {
+        let type_id = TypeId::of::<T>();
+        if let Some(store_kv) = self.map.get(&type_id) {
+            store_kv.value().has_entity(entity)
+        } else {
+            false
+        }
     }
 
     pub fn despawn(&self, entity: EntityId) {

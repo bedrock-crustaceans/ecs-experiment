@@ -1,10 +1,12 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::entity::Entity;
-use crate::{Component, Filter, Query, Resource, World};
+use crate::{Component, Query, Resource, World};
+use crate::filter::With;
 
 #[derive(Debug)]
-struct Alive;
+struct Despawn;
 
-impl Component for Alive {}
+impl Component for Despawn {}
 
 #[derive(Debug)]
 struct Health {
@@ -13,19 +15,20 @@ struct Health {
 
 impl Component for Health {}
 
-fn counter_system(query: Query<&Alive>) {
+fn counter_system(query: Query<&Despawn>) {
     let count = query.into_iter().count();
     println!("There are {count} entities alive");
 }
 
-fn despawning_system(query: Query<Entity>) {
-    // println!("There exist {} entities", query.into_iter().count());
-    // if let Some(entity) = query.into_iter().nth(2) {
-    //     entity.despawn();
-    // }
-    // query.into_iter().nth(1).unwrap().remove::<Alive>();
+fn despawn_system(query: Query<Entity, With<Despawn>>) {
+    for entity in &query {
+        println!("Despawning entity {}", entity.id.0);
+        entity.despawn();
+    }
+}
 
-    query.into_iter().next().unwrap().remove::<Alive>();
+fn despawning_system(query: Query<Entity, With<Despawn>>) {
+    query.into_iter().next().map(|entity| entity.despawn());
 }
 
 #[derive(Debug)]
@@ -37,12 +40,11 @@ impl Component for Counter {}
 async fn test() {
     let mut world = World::new();
 
-    world.spawn((Counter(1), Alive));
-    // world.spawn((Counter(2), Alive));
-    // world.spawn((Counter(3), Alive));
+    world.spawn((Counter(0)));
+    world.spawn((Counter(1)));
+    world.spawn((Counter(2), Despawn));
 
-    world.system(counter_system);
-    world.system(despawning_system);
+    world.system(despawn_system);
 
     world.tick().await;
     world.tick().await;

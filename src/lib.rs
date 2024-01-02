@@ -9,6 +9,7 @@ mod resource;
 mod system;
 mod world;
 mod scheduler;
+mod filter;
 
 pub use component::*;
 pub use entity::*;
@@ -17,6 +18,7 @@ pub use query::*;
 pub use resource::*;
 pub use system::*;
 pub use world::*;
+pub use filter::*;
 
 pub(crate) mod sealed {
     pub trait Sealed {}

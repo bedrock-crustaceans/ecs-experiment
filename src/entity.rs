@@ -1,7 +1,8 @@
-use crate::{Component, QueryParams, World};
+use crate::{Component, FilterParams, QueryParams, World};
 use std::any::TypeId;
 use std::fmt::{Debug, Display};
 use std::iter::{Enumerate, FilterMap, FusedIterator};
+use std::marker::PhantomData;
 use std::sync::Arc;
 use bitvec::vec::BitVec;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -23,6 +24,10 @@ impl Entity {
     /// The actual change is only performed after all systems have completed.
     pub fn despawn(self) {
         self.world.scheduler.schedule_despawn(self.id);
+    }
+
+    pub fn has<T: Component>(&self) -> bool {
+        self.world.components.has_component::<T>(self.id)
     }
 
     pub fn get<T: Component>(&self) -> Option<&T> {
@@ -87,21 +92,28 @@ impl Entities {
         }
     }
 
-    pub fn iter(&self, world: Arc<World>) -> EntityIter {
+    pub fn iter<F: FilterParams>(&self, world: Arc<World>) -> EntityIter<F> {
         let entities = self.indices.read();
         EntityIter {
-            world, entities, iter_index: 0
+            world, entities, iter_index: 0, _marker: PhantomData
         }
     }
 }
 
-pub(crate) struct EntityIter<'entts> {
+pub(crate) struct EntityIter<'entts, F>
+where
+    F: FilterParams
+{
     pub world: Arc<World>,
     pub entities: RwLockReadGuard<'entts, BitVec>,
-    pub iter_index: usize
+    pub iter_index: usize,
+    pub _marker: PhantomData<F>
 }
 
-impl<'entts> Iterator for EntityIter<'entts> {
+impl<'entts, F> Iterator for EntityIter<'entts, F>
+where
+    F: FilterParams
+{
     type Item = Entity;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -110,11 +122,17 @@ impl<'entts> Iterator for EntityIter<'entts> {
             .nth(self.iter_index)?;
 
         self.iter_index += 1;
-        Some(Entity {
+        let entity = Entity {
             world: self.world.clone(),
             id: EntityId(next_id)
-        })
+        };
+
+        if F::filter(&entity) {
+            Some(entity)
+        } else {
+            self.next()
+        }
     }
 }
 
-impl FusedIterator for EntityIter<'_> {}
+impl<F: FilterParams> FusedIterator for EntityIter<'_, F> {}

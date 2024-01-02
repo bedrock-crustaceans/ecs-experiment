@@ -1,15 +1,12 @@
 use std::any::TypeId;
-use std::iter::FusedIterator;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{marker::PhantomData, sync::Arc};
 use std::mem::MaybeUninit;
-use std::ptr::NonNull;
 
 use crate::component::{Component, Components, TypedStorage};
 use crate::{Entity, EntityIter, sealed, World};
+use crate::filter::FilterParams;
 use crate::sealed::Sealed;
-
-pub trait Filter {}
 
 pub trait NonRefQueryParam {
     type Ref<'q>;
@@ -106,19 +103,6 @@ where
     }
 }
 
-pub trait FilterBundle {}
-
-impl FilterBundle for () {}
-
-impl<F: Filter> FilterBundle for F {}
-
-impl<F0, F1> FilterBundle for (F0, F1)
-where
-    F0: FilterBundle,
-    F1: FilterBundle,
-{
-}
-
 /// For safety reasons, the locked flag in a query should never be set to false once it has been
 /// set to true. This type enforces that rule by not providing any methods to set it to false.
 #[derive(Default)]
@@ -172,7 +156,7 @@ impl LockFlag {
 /// Once the iterator performs its first iteration, the query turns into a locked query.
 /// This means that all component storages that the query requires will be locked.
 /// Whether this constitutes a shared lock or exclusive lock depends on the content of the query.
-pub struct Query<Q: QueryParams, F: FilterBundle = ()> {
+pub struct Query<Q: QueryParams, F: FilterParams = ()> {
     /// Pointer to the world that this query is directed at.
     world: Arc<World>,
     /// Whether this query has acquired locks on component storages.
@@ -181,7 +165,7 @@ pub struct Query<Q: QueryParams, F: FilterBundle = ()> {
     _marker: PhantomData<(Q, F)>,
 }
 
-impl<Q: QueryParams, F: FilterBundle> Query<Q, F> {
+impl<Q: QueryParams, F: FilterParams> Query<Q, F> {
     /// Creates a new unlocked query for the specified world.
     pub(crate) fn new(world: Arc<World>) -> Self {
         Self {
@@ -195,7 +179,7 @@ impl<Q: QueryParams, F: FilterBundle> Query<Q, F> {
 impl<'query, P, F, N> IntoIterator for &'query Query<N, F>
 where
     P: NonRefQueryParam + 'static,
-    F: FilterBundle,
+    F: FilterParams,
     N: QueryParams<NonRef = P>,
 {
     type Item = P::Ref<'query>;
@@ -215,7 +199,7 @@ where
 impl<Q, F> Drop for Query<Q, F>
 where
     Q: QueryParams,
-    F: FilterBundle,
+    F: FilterParams,
 {
     fn drop(&mut self) {
         if self.locked.is_flagged() {
@@ -231,10 +215,10 @@ where
 pub struct QueryIter<'query, P, Q, F>
 where
     Q: QueryParams<NonRef = P>,
-    F: FilterBundle,
+    F: FilterParams,
 {
     world: Arc<World>,
-    entity_iter: EntityIter<'query>,
+    entity_iter: EntityIter<'query, F>,
     locked: &'query LockFlag,
     index: usize,
     _marker: PhantomData<(Q, F)>,
@@ -243,7 +227,7 @@ where
 impl<'query, P, F, Q> Iterator for QueryIter<'query, P, Q, F>
 where
     P: NonRefQueryParam + 'static,
-    F: FilterBundle,
+    F: FilterParams,
     Q: QueryParams<NonRef = P>
 {
     type Item = P::Ref<'query>;
@@ -252,14 +236,18 @@ where
         if Q::IS_ENTITY {
             assert_eq!(TypeId::of::<P::Ref<'static>>(), TypeId::of::<Entity>());
 
-            self.entity_iter.next().map(|entity| unsafe {
-                let cast = std::mem::transmute_copy::<Entity, Self::Item>(&entity);
-                std::mem::forget(entity);
+            self.entity_iter.next().map(|entity| {
+                unsafe {
+                    let cast = std::mem::transmute_copy::<Entity, Self::Item>(&entity);
+                    std::mem::forget(entity);
 
-                cast
+                    cast
+                }
             })
         } else {
             assert_eq!(TypeId::of::<P::Ref<'static>>(), TypeId::of::<&P>());
+
+            todo!("filters");
 
             let typeless_store = self.world.components.map.get(&TypeId::of::<Q::NonRef>());
 
@@ -333,7 +321,7 @@ impl<'query, P1, P2, F, N> Iterator for QueryIter<'query, (P1, P2), N, F>
     where
         P1: NonRefQueryParam + 'query,
         P2: NonRefQueryParam + 'query,
-        F: FilterBundle,
+        F: FilterParams,
         N: QueryParams<NonRef = (P1, P2)>,
 {
     type Item = &'query N::NonRef;
