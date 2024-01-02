@@ -18,12 +18,14 @@ fn counter_system(query: Query<&Alive>) {
     println!("There are {count} entities alive");
 }
 
-fn naming_system(query: Query<Entity>) {
-    println!("There exist {} entities", query.into_iter().count());
-    if let Some(entity) = query.into_iter().nth(2) {
-        entity.despawn();
-    }
-    query.into_iter().nth(1).unwrap().remove::<Alive>();
+fn despawning_system(query: Query<Entity>) {
+    // println!("There exist {} entities", query.into_iter().count());
+    // if let Some(entity) = query.into_iter().nth(2) {
+    //     entity.despawn();
+    // }
+    // query.into_iter().nth(1).unwrap().remove::<Alive>();
+
+    query.into_iter().next().unwrap().remove::<Alive>();
 }
 
 #[derive(Debug)]
@@ -36,11 +38,11 @@ async fn test() {
     let mut world = World::new();
 
     world.spawn((Counter(1), Alive));
-    world.spawn((Counter(2), Alive));
-    world.spawn((Counter(3), Alive));
+    // world.spawn((Counter(2), Alive));
+    // world.spawn((Counter(3), Alive));
 
     world.system(counter_system);
-    world.system(naming_system);
+    world.system(despawning_system);
 
     world.tick().await;
     world.tick().await;

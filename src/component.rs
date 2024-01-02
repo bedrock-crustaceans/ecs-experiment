@@ -91,8 +91,16 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
 
     fn remove(&self, entity: EntityId) -> bool {
         if let Some((_, index)) = self.map.remove(&entity) {
+            let mut lock = self.storage.write();
             // Drop this entity's component from storage and move the tail to its position.
-            self.storage.write().swap_remove(index);
+            lock.swap_remove(index);
+            if lock.is_empty() {
+                // Do not try to remap entities when the last entity is removed.
+                // Destroy the reverse mapping instead.
+                self.reverse_map.write().clear();
+                return false
+            }
+
             // Modify mapping for affected tail entity.
             let mut reverse_lock = self.reverse_map.write();
             let modified_id = reverse_lock[reverse_lock.len() - 1];
