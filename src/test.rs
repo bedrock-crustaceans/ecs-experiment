@@ -3,48 +3,49 @@ use crate::entity::Entity;
 use crate::{Component, Query, Resource, World};
 use crate::filter::With;
 
-#[derive(Debug)]
-struct Despawn;
-
-impl Component for Despawn {}
-
-#[derive(Debug)]
-struct Health {
-    value: f32,
+/// Logs the health of all entities.
+fn health_system(query: Query<&Health>) {
+    for count in &query {
+        // Print the data ins
+        println!("Health: {}", count.0);
+    }
 }
 
-impl Component for Health {}
-
-fn counter_system(query: Query<&Despawn>) {
-    let count = query.into_iter().count();
-    println!("There are {count} entities alive");
+/// Logs the health all sleeping entities.
+fn sleeping_system(query: Query<&Health, With<Sleeping>>) {
+    for sleeping in &query {
+        println!("Entity with health {} is sleeping", sleeping.0);
+    }
 }
 
-fn despawn_system(query: Query<Entity, With<Despawn>>) {
+/// System that kills all sleeping entities.
+fn death_system(query: Query<Entity, With<Sleeping>>) {
     for entity in &query {
-        println!("Despawning entity {}", entity.id.0);
         entity.despawn();
     }
 }
 
-fn despawning_system(query: Query<Entity, With<Despawn>>) {
-    query.into_iter().next().map(|entity| entity.despawn());
-}
+#[derive(Debug)]
+struct Sleeping;
+
+impl Component for Sleeping {}
 
 #[derive(Debug)]
-struct Counter(usize);
+struct Health(f32);
 
-impl Component for Counter {}
+impl Component for Health {}
 
 #[tokio::test]
 async fn test() {
-    let mut world = World::new();
+    let world = World::new();
 
-    world.spawn((Counter(0)));
-    world.spawn((Counter(1)));
-    world.spawn((Counter(2), Despawn));
+    world.spawn(Health(0.0));
+    world.spawn(Health(1.0));
+    world.spawn((Health(2.0), Sleeping));
 
-    world.system(despawn_system);
+    world.system(health_system);
+    world.system(death_system);
+    world.system(sleeping_system);
 
     world.tick().await;
     world.tick().await;

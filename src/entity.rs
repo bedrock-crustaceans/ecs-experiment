@@ -23,6 +23,7 @@ impl Entity {
     /// Despawns the entity, invalidating its ID and removing all its components from storage.
     /// The actual change is only performed after all systems have completed.
     pub fn despawn(self) {
+        println!("Despawning entity {}", self.id.0);
         self.world.scheduler.schedule_despawn(self.id);
     }
 

@@ -247,7 +247,7 @@ where
         } else {
             assert_eq!(TypeId::of::<P::Ref<'static>>(), TypeId::of::<&P>());
 
-            todo!("filters");
+            // todo!("filters");
 
             let typeless_store = self.world.components.map.get(&TypeId::of::<Q::NonRef>());
 
@@ -290,6 +290,9 @@ where
                                 MaybeUninit::uninit().assume_init()
                             })
                         } else {
+                            // println!("{}", std::any::type_name::<P>());
+                            // println!("{}", std::any::type_name::<Self::Item>());
+
                             // SAFETY: This is simply to get around issues with the type system.
                             // An assertion at the start of the iterator ensures that both types below are
                             // equal to each other. The transmuted component will also not have a longer
@@ -297,7 +300,7 @@ where
                             // The container of the component lives longer than the query and it can also not
                             // be modified while this query exists.
                             Some(unsafe {
-                                std::mem::transmute_copy::<P, Self::Item>(&store_lock[self.index])
+                                std::mem::transmute_copy::<&P, Self::Item>(&&store_lock[self.index])
                             })
                         }
                     }
