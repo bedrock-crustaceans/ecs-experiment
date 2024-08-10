@@ -21,6 +21,7 @@ fn sleeping_system(query: Query<&Health, With<Sleeping>>) {
 /// System that kills all sleeping entities.
 fn death_system(query: Query<Entity, With<Sleeping>>) {
     for entity in &query {
+        println!("Despawning entity {} in next tick", entity.id.0);
         entity.despawn();
     }
 }
@@ -48,5 +49,5 @@ async fn test() {
     world.system(sleeping_system);
 
     world.tick().await;
-    world.tick().await;
+    // world.tick().await;
 }

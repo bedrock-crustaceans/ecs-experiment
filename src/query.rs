@@ -271,11 +271,26 @@ where
                     unsafe { typed_store.storage.make_read_guard_unchecked() }
                 };
 
-                let store_index = typed_store.reverse_map.read().get(self.index).map(|id| *id);
-                if store_index.is_none() {
-                    // No more components remaining.
-                    std::mem::forget(store_lock);
-                    return None;
+                // Find next entity ID. This also filters out the entities that do not match the filter.
+                let store_index = loop {
+                    let Some(store_index) = typed_store.reverse_map.read().get(self.index).map(|id| *id) else {
+                        // No more components remaining.
+                        std::mem::forget(store_lock);
+                        return None;
+                    };
+
+                    let entity = Entity {
+                        id: store_index,
+                        world: self.world.clone()
+                    };
+
+                    if F::filter(&entity) {
+                        // Matching entity has been found.
+                        break store_index
+                    }
+
+                    // Continue to next option
+                    self.index += 1;
                 };
 
                 let item = match Q::SHARED {
@@ -300,7 +315,8 @@ where
                             // The container of the component lives longer than the query and it can also not
                             // be modified while this query exists.
                             Some(unsafe {
-                                std::mem::transmute_copy::<&P, Self::Item>(&&store_lock[self.index])
+                                // std::mem::transmute_copy::<&P, Self::Item>(&&store_lock[self.index])
+                                std::mem::transmute_copy::<&P, Self::Item>(&&store_lock[store_index.0])
                             })
                         }
                     }
