@@ -4,10 +4,9 @@ use crate::{Component, Query, Resource, World};
 use crate::filter::With;
 
 /// Logs the health of all entities.
-fn health_system(query: Query<&Health>) {
-    for count in &query {
-        // Print the data ins
-        println!("Health: {}", count.0);
+fn health_system(query: Query<(&Health, &Sleeping)>) {
+    for (health, sleeping) in &query {
+        println!("Health: {}", health.0);
     }
 }
 

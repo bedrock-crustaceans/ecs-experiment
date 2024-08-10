@@ -20,6 +20,10 @@ impl<T: Component> NonRefQueryParam for T {
     type Ref<'q> = &'q T;
 }
 
+impl<T1: Component, T2: Component> NonRefQueryParam for (T1, T2) {
+    type Ref<'q> = (&'q T1, &'q T2);
+}
+
 /// Represents a collection of items contained in a [`Query`].
 ///
 /// Any type that implements this trait can be used in a query.
@@ -245,7 +249,7 @@ where
                 }
             })
         } else {
-            assert_eq!(TypeId::of::<P::Ref<'static>>(), TypeId::of::<&P>());
+            // assert_eq!(TypeId::of::<P::Ref<'static>>(), TypeId::of::<&P>());
 
             // todo!("filters");
 
@@ -336,16 +340,16 @@ where
     }
 }
 
-impl<'query, P1, P2, F, N> Iterator for QueryIter<'query, (P1, P2), N, F>
-    where
-        P1: NonRefQueryParam + 'query,
-        P2: NonRefQueryParam + 'query,
-        F: FilterParams,
-        N: QueryParams<NonRef = (P1, P2)>,
-{
-    type Item = &'query N::NonRef;
+// impl<'query, P1, P2, F, N> Iterator for QueryIter<'query, (P1, P2), N, F>
+//     where
+//         P1: NonRefQueryParam + 'query,
+//         P2: NonRefQueryParam + 'query,
+//         F: FilterParams,
+//         N: QueryParams<NonRef = (P1, P2)>,
+// {
+//     type Item = &'query N::NonRef;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-    }
-}
+//     fn next(&mut self) -> Option<Self::Item> {
+//         todo!()
+//     }
+// }
