@@ -5,7 +5,7 @@ use crate::filter::With;
 
 /// Logs the health of all entities.
 fn health_system(query: Query<(&Health, &Sleeping)>) {
-    for (health, sleeping) in &query {
+    for (health, _sleeping) in &query {
         println!("Health: {}", health.0);
     }
 }
@@ -22,6 +22,12 @@ fn death_system(query: Query<Entity, With<Sleeping>>) {
     for entity in &query {
         println!("Despawning entity {} in next tick", entity.id.0);
         entity.despawn();
+    }
+}
+
+fn zst_system(query: Query<&Sleeping>) {
+    for zst in &query {
+        println!("Sleeping");
     }
 }
 
@@ -46,6 +52,7 @@ async fn test() {
     world.system(health_system);
     world.system(death_system);
     world.system(sleeping_system);
+    world.system(zst_system);
 
     world.tick().await;
     // world.tick().await;

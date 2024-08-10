@@ -86,6 +86,8 @@ impl<T: Component + 'static> QueryParams for &T {
                 .downcast_ref::<TypedStorage<T>>()
                 .unwrap();
 
+            let locked = typed_store.storage.is_locked();
+
             // Release the component lock
             // SAFETY: Because of the required guarantees made by the caller.
             // Unlocking the read lock specifically is valid because this function is only implemented
@@ -107,7 +109,7 @@ impl<T: Component + 'static> QueryParams for &T {
                     .unwrap();
 
                 // Lock the store while QueryIter exists.
-                let store_lock = if index == 0 {
+                let store_lock = if !lock.is_flagged() {
                     // Acquire lock
                     lock.flag();
                     typed_store.storage.read()
@@ -147,9 +149,12 @@ impl<T: Component + 'static> QueryParams for &T {
                     // It is also impossible to construct unconstructable types such as empty
                     // enums since the types have to be constructed to add them to an entity
                     // in the first place.
-                    Some(unsafe {
+                    let zst = unsafe {
                         MaybeUninit::uninit().assume_init()
-                    })
+                    };
+
+                    // Creates a static reference to the ZST. As `T` is zero-sized, `Box::new` does not actually allocate.
+                    Some(Box::leak(Box::new(zst)) as &T)
                 } else {
                     // println!("{}", std::any::type_name::<P>());
                     // println!("{}", std::any::type_name::<Self::Item>());
@@ -184,7 +189,22 @@ impl<T: Component> QueryParams for &mut T {
     const SHARED: bool = false;
 
     unsafe fn unlock_all<S: sealed::Sealed>(components: &Components) {
-        todo!()
+        println!("Unlock write");
+
+        let typeless_store = components.map.get(&TypeId::of::<T>());
+        if let Some(store) = typeless_store {
+            let typed_store = store
+                .value()
+                .as_any()
+                .downcast_ref::<TypedStorage<T>>()
+                .unwrap();
+
+            // Release the component lock
+            // SAFETY: Because of the required guarantees made by the caller.
+            // Unlocking the write lock specifically is valid because this function is only implemented
+            // for mutable references, which only utilise write locks.
+            typed_store.storage.force_unlock_write();
+        }
     }
 
     fn fetch<F: FilterParams>(world: &Arc<World>, index: usize, lock: &LockFlag) -> (Option<Self>, usize) {
@@ -202,10 +222,13 @@ where
     const SHARED: bool = T1::SHARED || T2::SHARED;
 
     unsafe fn unlock_all<S: sealed::Sealed>(components: &Components) {
-        todo!()
+        T1::unlock_all::<sealed::Sealer>(components);
+        T2::unlock_all::<sealed::Sealer>(components);
     }
 
     fn fetch<F: FilterParams>(world: &Arc<World>, mut index: usize, lock: &LockFlag) -> (Option<Self>, usize) {
+        println!("Fetching {} and {}", std::any::type_name::<T1>(), std::any::type_name::<T2>());
+
         let start = index;
 
         let (t1, adv) = T1::fetch::<F>(world, index, lock);
@@ -215,12 +238,16 @@ where
             return (None, index - start)
         };
 
+        println!("Fetched T1");
+
         let (t2, adv) = T2::fetch::<F>(world, index, lock);
         index += adv;
 
         let Some(t2) = t2 else {
             return (None, index - start)
         };
+
+        println!("Fetched T2");
 
         (Some((t1, t2)), index - start)
     }
