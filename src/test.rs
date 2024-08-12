@@ -2,17 +2,21 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use parking_lot::RwLock;
 
 use crate::entity::Entity;
-use crate::{Component, Query, Resource, World};
+use crate::{Component, Query, Resource, Without, World};
 use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
 
-fn test2(query: Query<&'static Health>) {
-    for health in &query {
-        println!("Health: {health:?}");
+fn test2(query: Query<Entity, Without<Sleeping>>) {
+    // let mut test = None;
+    for entity in &query {
+        println!("ID: {:?}", entity.id());
 
-        *GLOBAL.write() = Some(health);
+        // test = Some(health);
+        // *GLOBAL.write() = Some(health);
     }
+
+    // println!("{test:?}");
 }
 
 // /// Logs the health of all entities.

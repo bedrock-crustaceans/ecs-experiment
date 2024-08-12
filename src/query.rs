@@ -556,42 +556,73 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::{Component, Entity, FilterParams, World};
+use crate::{Component, Entity, EntityIter, FilterParams, World};
 
 pub trait QueryParams {
     type Fetchable<'query>;
 
     const MUTABLE: bool;
+
+    fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>>;
 }
 
 impl QueryParams for Entity {
     type Fetchable<'query> = Entity;
 
     const MUTABLE: bool = false;
+
+    fn fetch<'w>(_world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
+        Some(entity)
+    }
 }
 
 impl<T: Component> QueryParams for &T {
     type Fetchable<'query> = &'query T;
 
     const MUTABLE: bool = false;
+
+    fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
+        todo!()
+    }
 }
 
 impl<T: Component> QueryParams for &mut T {
     type Fetchable<'query> = &'query mut T;
 
     const MUTABLE: bool = true;
+
+    fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
+        todo!()
+    }
 }
 
 impl<Q1: QueryParams, Q2: QueryParams> QueryParams for (Q1, Q2) {
     type Fetchable<'query> = (Q1::Fetchable<'query>, Q2::Fetchable<'query>);
 
     const MUTABLE: bool = Q1::MUTABLE || Q2::MUTABLE;
+
+    fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
+        let q1 = Q1::fetch(world, entity.clone())?;
+        let q2 = Q2::fetch(world, entity)?;
+
+        Some((q1, q2))
+    }
 }
 
 pub struct Query<Q: QueryParams, F: FilterParams = ()> {
     world: Arc<World>,
-    _marker: PhantomData<(Q, F)>
+    /// Use pointer in marker to ensure this type cannot be sent between threads.
+    /// 
+    /// This is required because when the query is started it obtains a lock on the storages.
+    /// A lock should only be used from the thread that owns it. If this query were to be 
+    /// transferred to another thread, it would cause undefined behaviour. 
+    /// 
+    /// I don't see any easy way to make a query thread safe as that would require 
+    _marker: PhantomData<*const (Q, F)>
 }
+
+unsafe impl<Q: QueryParams, F: FilterParams> Send for Query<Q, F> {}
+unsafe impl<Q: QueryParams, F: FilterParams> Sync for Query<Q, F> {}
 
 impl<Q: QueryParams, F: FilterParams> Query<Q, F> {
     pub fn new(world: Arc<World>) -> Self {
@@ -609,21 +640,25 @@ impl<'query, Q: QueryParams, F: FilterParams> IntoIterator for &'query Query<Q, 
 }
 
 pub struct QueryIter<'query, Q: QueryParams, F: FilterParams> {
-    query: &'query Query<Q, F>
+    query: &'query Query<Q, F>,
+    entities: EntityIter<'query, F>
 }
 
 impl<'query, Q: QueryParams, F: FilterParams> Iterator for QueryIter<'query, Q, F> {
     type Item = Q::Fetchable<'query>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        // Obtain the next entity that matches the filter.
+        let entity = self.entities.next()?;
+        Q::fetch(&self.query.world, entity)
     }
 }
 
 impl<'query, Q: QueryParams, F: FilterParams> From<&'query Query<Q, F>> for QueryIter<'query, Q, F> {
     fn from(query: &'query Query<Q, F>) -> Self {
+        let entities = query.world.entities.iter(&query.world);
         QueryIter {
-            query
+            query, entities
         }
     }
 }

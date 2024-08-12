@@ -10,6 +10,7 @@ use parking_lot::{RwLock, RwLockReadGuard};
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct EntityId(pub(crate) usize);
 
+#[derive(Clone)]
 pub struct Entity {
     pub(crate) world: Arc<World>,
     pub(crate) id: EntityId,
@@ -92,7 +93,7 @@ impl Entities {
         }
     }
 
-    pub fn iter<F: FilterParams>(&self, world: Arc<World>) -> EntityIter<F> {
+    pub fn iter<'a, F: FilterParams>(&'a self, world: &'a Arc<World>) -> EntityIter<'a, F> {
         let entities = self.indices.read();
         EntityIter {
             world, entities, iter_index: 0, _marker: PhantomData
@@ -100,14 +101,14 @@ impl Entities {
     }
 }
 
-pub(crate) struct EntityIter<'entts, F>
+pub(crate) struct EntityIter<'query, F>
 where
     F: FilterParams
 {
-    pub world: Arc<World>,
-    pub entities: RwLockReadGuard<'entts, BitVec>,
+    pub world: &'query Arc<World>,
+    pub entities: RwLockReadGuard<'query, BitVec>,
     pub iter_index: usize,
-    pub _marker: PhantomData<F>
+    pub _marker: PhantomData<&'query F>
 }
 
 impl<'entts, F> Iterator for EntityIter<'entts, F>
@@ -117,20 +118,21 @@ where
     type Item = Entity;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next_id = self.entities
-            .iter_ones()
-            .nth(self.iter_index)?;
+        // Use a loop rather than recursion for cache reasons.
+        loop {
+            let next_id = self.entities
+                .iter_ones()
+                .nth(self.iter_index)?;
 
-        self.iter_index += 1;
-        let entity = Entity {
-            world: self.world.clone(),
-            id: EntityId(next_id)
-        };
+            self.iter_index += 1;
+            let entity = Entity {
+                world: self.world.clone(),
+                id: EntityId(next_id)
+            };
 
-        if F::filter(&entity) {
-            Some(entity)
-        } else {
-            self.next()
+            if F::filter(&entity) {
+                break Some(entity)
+            }
         }
     }
 }
