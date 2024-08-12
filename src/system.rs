@@ -55,7 +55,7 @@ impl<Q: QueryParams, F: FilterParams> SysParam for Query<Q, F> {
     const MUTABLE: bool = Q::MUTABLE;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
-        Query::new(world)
+        Query::new(world).expect("Failed to create query")
     }
 }
 

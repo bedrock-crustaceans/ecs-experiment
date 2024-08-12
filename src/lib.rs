@@ -10,7 +10,9 @@ mod system;
 mod world;
 mod scheduler;
 mod filter;
+mod error;
 
+pub use error::*;
 pub use component::*;
 pub use entity::*;
 pub use event::*;

@@ -7,16 +7,14 @@ use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
 
-fn test2(query: Query<(Entity, &Health), Without<Sleeping>>) {
-    // let mut test = None;
-    for (entity, health) in &query {
-        println!("ID: {:?} has {} health", entity.id(), health.0);
-
-        // test = Some(health);
-        // *GLOBAL.write() = Some(health);
+fn sleep_system(awake: Query<(Entity, &Health), Without<Sleeping>>, sleeping: Query<(Entity, &Health), With<Sleeping>>) {
+    for (entity, health) in &awake {
+        println!("ID: {:?} has {} health and is awake", entity.id(), health.0);
     }
 
-    // println!("{test:?}");
+    for (entity, health) in &sleeping {
+        println!("ID: {:?} has {} health and is sleeping", entity.id(), health.0);
+    }
 }
 
 // /// Logs the health of all entities.
@@ -65,7 +63,7 @@ async fn test() {
     world.spawn(Health(1.0));
     world.spawn((Health(2.0), Sleeping));
 
-    world.system(test2);
+    world.system(sleep_system);
     // world.system(health_system);
     // world.system(death_system);
     // world.system(sleeping_system);

@@ -1,8 +1,11 @@
 use crate::entity::EntityId;
+use crate::{EcsError, EcsResult};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::any::{Any, TypeId};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::usize;
 
 pub trait Component: Send + Sync + 'static {}
 
@@ -31,13 +34,53 @@ where
     }
 }
 
-pub(crate) trait TypelessStorage: Send + Sync {
+pub trait TypelessStorage: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn remove(&self, entity: EntityId) -> bool;
     fn has_entity(&self, entity: EntityId) -> bool;
 }
 
-pub(crate) struct TypedStorage<T> {
+pub struct StorageLock {
+    counter: AtomicUsize
+}
+
+impl StorageLock {
+    pub fn new() -> Self {
+        Self { counter: AtomicUsize::new(0) }
+    }
+
+    pub fn acquire_read(&self) -> EcsResult<()> {
+        if self.counter.load(Ordering::SeqCst) == usize::MAX {
+            // Lock is already being used for writing.
+            return Err(EcsError::StorageLocked("write lock active, cannot acquire read lock"))
+        }
+
+        self.counter.fetch_add(1, Ordering::SeqCst);
+        Ok(())        
+    }
+
+    pub fn release_read(&self) {
+        self.counter.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    pub fn acquire_write(&self) -> EcsResult<()> {
+        if self.counter.load(Ordering::SeqCst) != 0 {
+            // Lock is already being used for reading.
+            return Err(EcsError::StorageLocked("read or write lock active, cannot acquire write lock"))
+        }
+
+        self.counter.store(usize::MAX, Ordering::SeqCst);
+        Ok(())
+    }
+
+    pub fn release_write(&self) {
+        self.counter.store(0, Ordering::SeqCst);
+    }
+}
+
+pub struct TypedStorage<T> {
+    pub(crate) lock: StorageLock,
+
     pub(crate) map: DashMap<EntityId, usize>,
     pub(crate) reverse_map: RwLock<Vec<EntityId>>,
     pub(crate) storage: RwLock<Vec<T>>,
@@ -46,16 +89,19 @@ pub(crate) struct TypedStorage<T> {
 impl<T: Send + Sync + 'static> TypedStorage<T> {
     pub fn with(entity: EntityId, component: T) -> Box<dyn TypelessStorage> {
         Box::new(Self {
+            lock: StorageLock::new(),
             map: DashMap::from_iter([(entity, 0)]),
             reverse_map: RwLock::new(vec![entity]),
             storage: RwLock::new(vec![component]),
         })
     }
 
-    pub fn insert(&self, entity: EntityId, component: T) -> Option<T> {
-        if let Some(index) = self.map.get(&entity) {
+    pub fn insert(&self, entity: EntityId, component: T) -> EcsResult<Option<T>> {
+        self.lock.acquire_write()?;
+
+        let result = if let Some(index) = self.map.get(&entity) {
             let mut lock = self.storage.write();
-            Some(std::mem::replace(&mut lock[*index], component))
+            Ok(Some(std::mem::replace(&mut lock[*index], component)))
         } else {
             let mut lock = self.storage.write();
 
@@ -66,14 +112,19 @@ impl<T: Send + Sync + 'static> TypedStorage<T> {
             self.map.insert(entity, index);
             self.reverse_map.write().push(entity);
 
-            None
-        }
+            Ok(None)
+        };
+
+        self.lock.release_write();
+
+        result
     }
 }
 
 impl<T> Default for TypedStorage<T> {
     fn default() -> Self {
         Self {
+            lock: StorageLock::new(),
             map: DashMap::new(),
             reverse_map: RwLock::new(Vec::new()),
             storage: RwLock::new(Vec::new()),
@@ -119,7 +170,7 @@ pub struct Components {
 }
 
 impl Components {
-    pub fn insert<T: Component>(&self, entity: EntityId, component: T) -> Option<T> {
+    pub fn insert<T: Component>(&self, entity: EntityId, component: T) -> EcsResult<Option<T>> {
         let type_id = TypeId::of::<T>();
 
         if let Some(store) = self.map.get_mut(&type_id) {
@@ -128,7 +179,8 @@ impl Components {
         } else {
             self.map
                 .insert(type_id, TypedStorage::with(entity, component));
-            None
+
+            Ok(None)
         }
     }
 

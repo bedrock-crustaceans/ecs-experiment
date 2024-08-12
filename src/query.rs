@@ -554,9 +554,9 @@
 // //     }
 // // }
 
-use std::{any::TypeId, marker::PhantomData, sync::Arc};
+use std::{any::TypeId, marker::PhantomData, sync::{atomic::Ordering, Arc}};
 
-use crate::{Component, Entity, EntityIter, FilterParams, TypedStorage, World};
+use crate::{Component, EcsError, EcsResult, Entity, EntityIter, FilterParams, TypedStorage, World};
 
 pub trait QueryParams {
     type Fetchable<'query>;
@@ -564,6 +564,8 @@ pub trait QueryParams {
     const MUTABLE: bool;
 
     fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>>;
+    fn acquire_locks(world: &World) -> EcsResult<()>;
+    fn release_locks(world: &World);
 }
 
 impl QueryParams for Entity {
@@ -574,6 +576,9 @@ impl QueryParams for Entity {
     fn fetch<'w>(_world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
         Some(entity)
     }
+
+    fn acquire_locks(_world: &World) -> EcsResult<()> { Ok(()) /* Entities require no locks */ }
+    fn release_locks(_world: &World) { /* Entities require no locks. */ }
 }
 
 impl<T: Component> QueryParams for &T {
@@ -609,6 +614,36 @@ impl<T: Component> QueryParams for &T {
 
         Some(cast)
     }
+
+    fn release_locks(world: &World) {
+        let type_id = TypeId::of::<T>();
+        let typeless = world.components.map
+            .get(&type_id)
+            .expect("Storage to be unlocked does not exist");
+
+        let typed: &TypedStorage<T> = typeless
+            .value()
+            .as_any()
+            .downcast_ref()
+            .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
+
+        typed.lock.release_read();
+    }
+
+    fn acquire_locks(world: &World) -> EcsResult<()> {
+        let type_id = TypeId::of::<T>();
+        let typeless = world.components.map
+            .get(&type_id)
+            .expect("Storage to be locked does not exist");
+
+        let typed: &TypedStorage<T> = typeless
+            .value()
+            .as_any()
+            .downcast_ref()
+            .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
+
+        typed.lock.acquire_read()
+    }
 }
 
 impl<T: Component> QueryParams for &mut T {
@@ -618,6 +653,36 @@ impl<T: Component> QueryParams for &mut T {
 
     fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
         todo!()
+    }
+
+    fn acquire_locks(world: &World) -> EcsResult<()> {
+        let type_id = TypeId::of::<T>();
+        let typeless = world.components.map
+            .get(&type_id)
+            .expect("Storage to be locked does not exist");
+
+        let typed: &TypedStorage<T> = typeless
+            .value()
+            .as_any()
+            .downcast_ref()
+            .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
+
+        typed.lock.acquire_write()
+    }
+
+    fn release_locks(world: &World) {
+        let type_id = TypeId::of::<T>();
+        let typeless = world.components.map
+            .get(&type_id)
+            .expect("Storage to be locked does not exist");
+
+        let typed: &TypedStorage<T> = typeless
+            .value()
+            .as_any()
+            .downcast_ref()
+            .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
+
+        typed.lock.release_write()
     }
 }
 
@@ -631,6 +696,22 @@ impl<Q1: QueryParams, Q2: QueryParams> QueryParams for (Q1, Q2) {
         let q2 = Q2::fetch(world, entity)?;
 
         Some((q1, q2))
+    }
+
+    fn acquire_locks(world: &World) -> EcsResult<()> {
+        Q1::acquire_locks(world)?;
+
+        if let Err(err) = Q2::acquire_locks(world) {
+            Q1::release_locks(world);
+            return Err(err)
+        }
+
+        Ok(())
+    }
+
+    fn release_locks(world: &World) {
+        Q1::release_locks(world);
+        Q2::release_locks(world);
     }
 }
 
@@ -650,8 +731,19 @@ unsafe impl<Q: QueryParams, F: FilterParams> Send for Query<Q, F> {}
 unsafe impl<Q: QueryParams, F: FilterParams> Sync for Query<Q, F> {}
 
 impl<Q: QueryParams, F: FilterParams> Query<Q, F> {
-    pub fn new(world: Arc<World>) -> Self {
-        Self { world, _marker: PhantomData }
+    pub fn new(world: Arc<World>) -> EcsResult<Self> {
+        // Obtain lock on component storage.
+        Q::acquire_locks(&world)?;
+
+        Ok(Self { world, _marker: PhantomData })
+    }
+}
+
+impl<Q: QueryParams, F: FilterParams> Drop for Query<Q, F> {
+    fn drop(&mut self) {
+        // Locks can be released unconditionally.
+        // Whenever this code runs, a query has been created and all locks have therefore been acquired succesfully.
+        Q::release_locks(&self.world);
     }
 }
 
