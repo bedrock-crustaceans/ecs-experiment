@@ -3,7 +3,7 @@ use futures::StreamExt;
 use parking_lot::RwLock;
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::{event::{Event, EventReader, EventWriter}, query::{Query}, resource::{Res, ResMut, Resource}, sealed, QueryParams, World, FilterParams};
+use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, sealed, Query, QueryParams, World};
 
 pub trait Sys {
     fn call(&self, world: Arc<World>);
@@ -41,14 +41,14 @@ where
 }
 
 pub trait SysParam {
-    const SHARED: bool;
+    const MUTABLE: bool;
 
     #[doc(hidden)]
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self;
 }
 
-impl<C: QueryParams, F: FilterParams> SysParam for Query<C, F> {
-    const SHARED: bool = C::SHARED;
+impl<Q: QueryParams, F: FilterParams> SysParam for Query<Q, F> {
+    const MUTABLE: bool = Q::MUTABLE;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
         Query::new(world)
@@ -56,7 +56,7 @@ impl<C: QueryParams, F: FilterParams> SysParam for Query<C, F> {
 }
 
 impl<'a, R: Resource> SysParam for Res<'a, R> {
-    const SHARED: bool = false;
+    const MUTABLE: bool = false;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
         todo!();
@@ -64,7 +64,7 @@ impl<'a, R: Resource> SysParam for Res<'a, R> {
 }
 
 impl<'a, R: Resource> SysParam for ResMut<'a, R> {
-    const SHARED: bool = true;
+    const MUTABLE: bool = true;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
         todo!();
@@ -72,7 +72,7 @@ impl<'a, R: Resource> SysParam for ResMut<'a, R> {
 }
 
 impl<E: Event> SysParam for EventWriter<E> {
-    const SHARED: bool = false;
+    const MUTABLE: bool = false;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
         todo!();
@@ -80,7 +80,7 @@ impl<E: Event> SysParam for EventWriter<E> {
 }
 
 impl<E: Event> SysParam for EventReader<E> {
-    const SHARED: bool = false;
+    const MUTABLE: bool = false;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
         todo!();

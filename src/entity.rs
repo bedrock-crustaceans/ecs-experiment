@@ -1,7 +1,7 @@
-use crate::{Component, FilterParams, QueryParams, World};
+use crate::{filter::FilterParams, Component, World};
 use std::any::TypeId;
-use std::fmt::{Debug, Display};
-use std::iter::{Enumerate, FilterMap, FusedIterator};
+use std::fmt::Debug;
+use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use bitvec::vec::BitVec;
