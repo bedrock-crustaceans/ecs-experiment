@@ -31,13 +31,13 @@ impl Entity {
         self.world.components.has_component::<T>(self.id)
     }
 
-    pub fn get<T: Component>(&self) -> Option<&T> {
-        self.world.components.get(self.id)
-    }
+    // pub fn get<T: Component>(&self) -> Option<&T> {
+    //     self.world.components.get(self.id)
+    // }
 
-    pub fn get_mut<T: Component>(&self) -> Option<&mut T> {
-        self.world.components.get_mut(self.id)
-    }
+    // pub fn get_mut<T: Component>(&self) -> Option<&mut T> {
+    //     self.world.components.get_mut(self.id)
+    // }
 
     /// Removes a component from an entity. The actual change is only performed
     /// after all systems have completed running in order to prevent issues.

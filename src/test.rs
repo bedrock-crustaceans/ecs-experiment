@@ -7,10 +7,10 @@ use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
 
-fn test2(query: Query<Entity, Without<Sleeping>>) {
+fn test2(query: Query<(Entity, &Health), Without<Sleeping>>) {
     // let mut test = None;
-    for entity in &query {
-        println!("ID: {:?}", entity.id());
+    for (entity, health) in &query {
+        println!("ID: {:?} has {} health", entity.id(), health.0);
 
         // test = Some(health);
         // *GLOBAL.write() = Some(health);

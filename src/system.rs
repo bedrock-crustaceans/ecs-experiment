@@ -6,36 +6,40 @@ use std::{marker::PhantomData, sync::Arc};
 use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, sealed, Query, QueryParams, World};
 
 pub trait Sys {
-    fn call(&self, world: Arc<World>);
+    /// # Safety
+    /// 
+    /// Before running a system you must ensure that the Rust reference aliasing guarantees are upheld.
+    /// Any systems requiring mutable access to a component must have unique access.
+    unsafe fn call(&self, world: Arc<World>);
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct SysContainer<P, F: NakedSys<P>> {
+pub struct SysContainer<P, F: ParameterizedSys<P>> {
     pub system: F,
     pub _marker: PhantomData<P>,
 }
 
-impl<F: NakedSys<()>> Sys for SysContainer<(), F> {
-    fn call(&self, world: Arc<World>) {
+impl<F: ParameterizedSys<()>> Sys for SysContainer<(), F> {
+    unsafe fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-impl<P0, F: NakedSys<P0>> Sys for SysContainer<P0, F>
+impl<P0, F: ParameterizedSys<P0>> Sys for SysContainer<P0, F>
 where
     P0: SysParam,
 {
-    fn call(&self, world: Arc<World>) {
+    unsafe fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-impl<P0, P1, F: NakedSys<(P0, P1)>> Sys for SysContainer<(P0, P1), F>
+impl<P0, P1, F: ParameterizedSys<(P0, P1)>> Sys for SysContainer<(P0, P1), F>
 where
     P0: SysParam,
     P1: SysParam,
 {
-    fn call(&self, world: Arc<World>) {
+    unsafe fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
@@ -87,7 +91,7 @@ impl<E: Event> SysParam for EventReader<E> {
     }
 }
 
-pub trait NakedSys<Params>: Sized {
+pub trait ParameterizedSys<Params>: Sized {
     fn into_container(self) -> SysContainer<Params, Self> {
         SysContainer {
             system: self,
@@ -98,7 +102,7 @@ pub trait NakedSys<Params>: Sized {
     fn call(&self, world: Arc<World>);
 }
 
-impl<F> NakedSys<()> for F
+impl<F> ParameterizedSys<()> for F
 where
     F: Fn(),
 {
@@ -107,7 +111,7 @@ where
     }
 }
 
-impl<F, P0> NakedSys<P0> for F
+impl<F, P0> ParameterizedSys<P0> for F
 where
     F: Fn(P0),
     P0: SysParam,
@@ -118,7 +122,7 @@ where
     }
 }
 
-impl<F, P0, P1> NakedSys<(P0, P1)> for F
+impl<F, P0, P1> ParameterizedSys<(P0, P1)> for F
 where
     F: Fn(P0, P1),
     P0: SysParam,
@@ -155,7 +159,9 @@ impl Systems {
                 let sys = &lock[sys_index];
 
                 let clone = world.clone();
-                sys.call(clone);
+                unsafe {
+                    sys.call(clone);
+                }
             }));
         }
 

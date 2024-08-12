@@ -1,6 +1,6 @@
 use crate::component::{Components, SpawnBundle};
 use crate::entity::{Entities, Entity, EntityId};
-use crate::{NakedSys, Sys, SysContainer, Systems};
+use crate::{ParameterizedSys, Sys, SysContainer, Systems};
 use std::sync::Arc;
 use crate::scheduler::Scheduler;
 
@@ -34,7 +34,7 @@ impl World {
     pub fn system<P, S>(&self, system: S)
     where
         P: Send + Sync + 'static,
-        S: NakedSys<P> + Send + Sync + 'static,
+        S: ParameterizedSys<P> + Send + Sync + 'static,
         SysContainer<P, S>: Sys,
     {
         let wrapped = Arc::new(system.into_container());

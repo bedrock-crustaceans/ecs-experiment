@@ -69,10 +69,6 @@ impl<T: Send + Sync + 'static> TypedStorage<T> {
             None
         }
     }
-
-    pub fn get(&self, entity: EntityId) -> Option<&T> {
-        todo!()
-    }
 }
 
 impl<T> Default for TypedStorage<T> {
@@ -136,18 +132,18 @@ impl Components {
         }
     }
 
-    /// # Warning
-    pub fn get<T: Component>(&self, entity: EntityId) -> Option<&T> {
-        let type_id = TypeId::of::<T>();
-        let store_kv = self.map.get(&type_id)?;
-        let typed_store: &TypedStorage<T> = store_kv.value().as_any().downcast_ref().unwrap();
+    // /// # Warning
+    // pub fn get<T: Component>(&self, entity: EntityId) -> Option<&T> {
+    //     let type_id = TypeId::of::<T>();
+    //     let store_kv = self.map.get(&type_id)?;
+    //     let typed_store: &TypedStorage<T> = store_kv.value().as_any().downcast_ref().unwrap();
 
-        todo!()
-    }
+    //     todo!()
+    // }
 
-    pub fn get_mut<T: Component>(&self, entity: EntityId) -> Option<&mut T> {
-        todo!()
-    }
+    // pub fn get_mut<T: Component>(&self, entity: EntityId) -> Option<&mut T> {
+    //     todo!()
+    // }
 
     pub fn has_component<T: Component>(&self, entity: EntityId) -> bool {
         let type_id = TypeId::of::<T>();

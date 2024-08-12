@@ -554,9 +554,9 @@
 // //     }
 // // }
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{any::TypeId, marker::PhantomData, sync::Arc};
 
-use crate::{Component, Entity, EntityIter, FilterParams, World};
+use crate::{Component, Entity, EntityIter, FilterParams, TypedStorage, World};
 
 pub trait QueryParams {
     type Fetchable<'query>;
@@ -582,10 +582,32 @@ impl<T: Component> QueryParams for &T {
     const MUTABLE: bool = false;
 
     fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
+        debug_assert_eq!(TypeId::of::<&T>(), TypeId::of::<Self::Fetchable<'static>>(), "QueryParams::Fetchable is incorrect type");
+
         // Instead of keeping track of lock guards like before, we should instead access the components directly.
         // The scheduler will take care of aliasing issues as it will not schedule mutable queries at the same time as aliased ones.
 
-        todo!()
+        let type_id = TypeId::of::<T>();
+        let typeless = world.components.map.get(&type_id)?;
+        let typed: &TypedStorage<T> = typeless
+            .value()
+            .as_any()
+            .downcast_ref()
+            .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
+
+        let storage_index = *typed.map.get(&entity.id())?.value();
+        let lock = typed.storage.read();
+        let component = lock.get(storage_index)?;
+
+        let cast = unsafe {
+            // SAFETY: The assertion at the beginning of this function guarantees that `Self::Fetchable<'w>` and `&'w T` are the exact same type.
+            // hence transmuting between them is safe. Additionally the lifetime of the returned reference is set to 'query as the existence
+            // of this query implies that the component storage exist. Creating a query automatically fully locks storage, preventing any changes and therefore
+            // reference invalidation.
+            std::mem::transmute_copy::<&T, Self::Fetchable<'w>>(&component)
+        };
+
+        Some(cast)
     }
 }
 
