@@ -582,6 +582,9 @@ impl<T: Component> QueryParams for &T {
     const MUTABLE: bool = false;
 
     fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
+        // Instead of keeping track of lock guards like before, we should instead access the components directly.
+        // The scheduler will take care of aliasing issues as it will not schedule mutable queries at the same time as aliased ones.
+
         todo!()
     }
 }
