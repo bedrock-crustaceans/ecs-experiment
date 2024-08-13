@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
+use ecs_derive::Component;
 use parking_lot::RwLock;
 
 use crate::entity::Entity;
@@ -51,15 +52,11 @@ fn sleep_system(awake: Query<(Entity, &Health), Without<Sleeping>>, sleeping: Qu
 //     }
 // }
 
-#[derive(Debug)]
+#[derive(Debug, Component)]
 struct Sleeping;
 
-impl Component for Sleeping {}
-
-#[derive(Debug)]
+#[derive(Debug, Component)]
 struct Health(f32);
-
-impl Component for Health {}
 
 #[tokio::test]
 async fn test() {

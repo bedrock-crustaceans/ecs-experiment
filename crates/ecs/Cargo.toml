@@ -12,3 +12,5 @@ parking_lot = "0.12.1"
 tokio = { version = "1.25.0", features = ["rt", "rt-multi-thread", "macros"] }
 bitvec = "1.0.1"
 thiserror = "1.0.63"
+
+ecs_derive = { path = "../ecs_derive" }
