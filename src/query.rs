@@ -652,7 +652,32 @@ impl<T: Component> QueryParams for &mut T {
     const MUTABLE: bool = true;
 
     fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
-        todo!()
+        debug_assert_eq!(TypeId::of::<&mut T>(), TypeId::of::<Self::Fetchable<'static>>(), "QueryParams::Fetchable is incorrect type");
+
+        // Instead of keeping track of lock guards like before, we should instead access the components directly.
+        // The scheduler will take care of aliasing issues as it will not schedule mutable queries at the same time as aliased ones.
+
+        let type_id = TypeId::of::<T>();
+        let typeless = world.components.map.get(&type_id)?;
+        let typed: &TypedStorage<T> = typeless
+            .value()
+            .as_any()
+            .downcast_ref()
+            .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
+
+        let storage_index = *typed.map.get(&entity.id())?.value();
+        let mut lock = typed.storage.write();
+        let component = lock.get_mut(storage_index)?;
+
+        let cast = unsafe {
+            // SAFETY: The assertion at the beginning of this function guarantees that `Self::Fetchable<'w>` and `&'w T` are the exact same type.
+            // hence transmuting between them is safe. Additionally the lifetime of the returned reference is set to 'query as the existence
+            // of this query implies that the component storage exist. Creating a query automatically fully locks storage, preventing any changes and therefore
+            // reference invalidation.
+            std::mem::transmute_copy::<&mut T, Self::Fetchable<'w>>(&component)
+        };
+
+        Some(cast)
     }
 
     fn acquire_locks(world: &World) -> EcsResult<()> {
