@@ -1,6 +1,6 @@
 use crate::component::{Components, SpawnBundle};
-use crate::entity::{Entities, Entity, EntityId};
-use crate::{Events, ParameterizedSystem, System, SystemContainer, Systems};
+use crate::entity::{Entities, Entity};
+use crate::{Events, ParameterizedSystem, System, SystemContainer, SystemParams, Systems};
 use std::sync::Arc;
 use crate::scheduler::Scheduler;
 
@@ -35,7 +35,7 @@ impl World {
 
     pub fn system<P, S>(&self, system: S)
     where
-        P: Send + Sync + 'static,
+        P: SystemParams + Send + Sync + 'static,
         S: ParameterizedSystem<P> + Send + Sync + 'static,
         SystemContainer<P, S>: System,
     {

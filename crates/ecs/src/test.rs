@@ -9,7 +9,7 @@ use crate::filter::With;
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
 
 fn kill_system(
-    query: Query<(Entity, &Health), With<Sleeping>>,
+    query: Query<(Entity, &Health), Without<Sleeping>>,
     mut writer: EventWriter<Killed>
 ) {
     for (entity, health) in &query {

@@ -756,11 +756,11 @@ unsafe impl<Q: QueryParams, F: FilterParams> Send for Query<Q, F> {}
 unsafe impl<Q: QueryParams, F: FilterParams> Sync for Query<Q, F> {}
 
 impl<Q: QueryParams, F: FilterParams> Query<Q, F> {
-    pub fn new(world: Arc<World>) -> EcsResult<Self> {
+    pub fn new(world: &Arc<World>) -> EcsResult<Self> {
         // Obtain lock on component storage.
-        Q::acquire_locks(&world)?;
+        Q::acquire_locks(world)?;
 
-        Ok(Self { world, _marker: PhantomData })
+        Ok(Self { world: Arc::clone(world), _marker: PhantomData })
     }
 }
 

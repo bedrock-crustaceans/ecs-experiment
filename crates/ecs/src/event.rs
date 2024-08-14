@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use nohash_hasher::{BuildNoHashHasher, NoHashHasher};
 use parking_lot::RwLock;
 
-use crate::World;
+use crate::{World};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct EventId(usize);
@@ -25,7 +25,9 @@ struct EventTable<E: Event> {
 impl<E: Event> EventTable<E> {
     pub fn insert(&self, event: E) -> EventId {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        self.events.insert(id, event);
+        self.events.insert(id, EventSlot {
+            event, rem: AtomicUsize::new(self.readers.load(Ordering::SeqCst))
+        });
         EventId(id)
     }
 }
@@ -71,8 +73,6 @@ impl Events {
                     events: DashMap::with_capacity_and_hasher(1, BuildNoHashHasher::default())
                 };
 
-                todo!();
-
                 // There are no readers, so this message will never be read.
                 // We can skip adding it to the buffer.
 
@@ -83,7 +83,21 @@ impl Events {
         }
     }
 
-    pub(crate) fn incr_readers<E: Event>(&self) {
+    pub fn get<E: Event>(&self, id: usize) -> Option<E> {
+        let table = self.storage.get(&TypeId::of::<E>())?;
+        let table: &EventTable<E> = table.as_any().downcast_ref().expect("EventTable type ID does not match event type ID");
+
+        let slot = table.events.get(&id)?;
+        let rem = slot.rem.fetch_sub(1, Ordering::SeqCst);
+
+        if rem == 0 {
+            table.events.remove(&id);
+        }
+
+        Some(slot.event.clone())
+    }
+
+    pub fn add_reader<E: Event>(&self) {
         match self.storage.get(&TypeId::of::<E>()) {
             Some(table) => {
                 let table: &EventTable<E> = table
@@ -94,13 +108,22 @@ impl Events {
                 table.readers.fetch_add(1, Ordering::SeqCst);
             },
             None => {
-                let table = EvenTable {
+                let table: EventTable<E> = EventTable {
                     readers: AtomicUsize::new(1), next_id: AtomicUsize::new(0), events: DashMap::with_hasher(BuildNoHashHasher::default())
                 };
 
-                self.storage.insert(TypeId::of::<E>(), Box::new(table));s
+                self.storage.insert(TypeId::of::<E>(), Box::new(table));
             }
         }
+    }
+
+    pub fn remove_reader<E: Event>(&self) {
+        let Some(table) = self.storage.get(&TypeId::of::<E>()) else {
+            return
+        };
+
+        let table: &EventTable<E> = table.as_any().downcast_ref().expect("EventTable type ID does not match event type ID");
+        table.readers.fetch_sub(1, Ordering::SeqCst);
     }
 
     pub fn last_assigned<E: Event>(&self) -> Option<EventId> {
@@ -117,8 +140,8 @@ pub struct EventWriter<E: Event> {
 }
 
 impl<E: Event> EventWriter<E> {
-    pub(crate) fn new(world: Arc<World>) -> Self {
-        Self { world, _marker: PhantomData }
+    pub(crate) fn new(world: &Arc<World>) -> Self {
+        Self { world: Arc::clone(world), _marker: PhantomData }
     }
 
     pub fn write(&mut self, event: E) -> EventId {
@@ -128,18 +151,18 @@ impl<E: Event> EventWriter<E> {
 
 pub struct EventReader<E: Event> {
     world: Arc<World>,
-    last_seen: usize,
+    state: Arc<EventState<E>>,
     _marker: PhantomData<E>,
 }
 
 impl<E: Event> EventReader<E> {
-    pub(crate) fn new(world: Arc<World>) -> Self {
-        Self { world, last_seen: 0, _marker: PhantomData }
+    pub(crate) fn new(world: &Arc<World>, state: &Arc<EventState<E>>) -> Self {
+        Self { world: Arc::clone(world), state: Arc::clone(state), _marker: PhantomData }
     }
 
     pub fn len(&self) -> usize {
         let last_assigned = self.world.events.last_assigned::<E>().map(|x| x.0).unwrap_or(0);
-        last_assigned - self.last_seen
+        last_assigned - self.state.last_read.load(Ordering::SeqCst)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -153,10 +176,6 @@ impl<E: Event> EventReader<E> {
     pub fn par_read(&mut self) -> EventParIterator<E> {
         todo!()
     }
-    	
-    pub fn next(&self) -> Option<E> {
-        self.world.events.
-    }
 }
 
 pub struct EventIterator<'reader, E: Event> {
@@ -167,7 +186,8 @@ impl<'reader, E: Event> Iterator for EventIterator<'reader, E> {
     type Item = E;
 
     fn next(&mut self) -> Option<Self::Item> {
-        
+        let index = self.reader.state.last_read.fetch_add(1, Ordering::SeqCst);
+        self.reader.world.events.get(index)
     }
 }
 
@@ -182,3 +202,8 @@ pub struct EventParIterator<'reader, E: Event> {
 }
 
 pub trait Event: Clone + Send + Sync + 'static {}
+
+pub struct EventState<E: Event> {
+    pub last_read: AtomicUsize,
+    pub _marker: PhantomData<E>
+}
