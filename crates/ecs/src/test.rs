@@ -8,20 +8,37 @@ use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
 
-fn kill_system(
-    query: Query<(Entity, &Health), Without<Sleeping>>,
-    mut writer: EventWriter<Killed>
-) {
-    for (entity, health) in &query {
-        if health.0 <= 0.0 {
-            writer.write(Killed { entity });
-        }
-    }
+// fn kill_system(
+//     query: Query<(Entity, &Health), Without<Sleeping>>,
+//     mut writer: EventWriter<Killed>
+// ) {
+//     for (entity, health) in &query {
+//         if health.0 <= 0.0 {
+//             writer.write(Killed { entity });
+//         }
+//     }
+// }
+
+// fn kill_receiver(mut reader: EventReader<Killed>) {
+//     for event in reader.read() {
+//         println!("Killed entity {:?}", event.entity.id());
+//     }
+// }
+
+#[derive(Clone)]
+struct Message {
+    content: &'static str
 }
 
-fn kill_receiver(mut reader: EventReader<Killed>) {
-    for event in reader.read() {
-        println!("Killed entity {:?}", event.entity.id());
+impl Event for Message {}
+
+fn sender(mut writer: EventWriter<Message>) {
+    writer.write(Message { content: "Hello World!" });
+}
+
+fn receiver(mut reader: EventReader<Message>) {
+    for message in reader.read() {
+        println!("{}", message.content);
     }
 }
 
@@ -70,13 +87,15 @@ impl Event for Killed {}
 async fn test() {
     let world = World::new();
 
-    world.spawn(Health(0.0));
-    world.spawn(Health(1.0));
-    world.spawn((Health(2.0), Sleeping));
+    // world.spawn(Health(0.0));
+    // world.spawn(Health(1.0));
+    // world.spawn((Health(2.0), Sleeping));
 
-    world.system(kill_system);
-    world.system(kill_receiver);
+    // world.system(kill_system);
+    // world.system(kill_receiver);
+    world.system(sender);
+    world.system(receiver);
 
     world.tick().await;
-    world.tick().await;
+    // world.tick().await;
 }

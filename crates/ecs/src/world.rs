@@ -33,14 +33,14 @@ impl World {
         self.spawn(())
     }
 
-    pub fn system<P, S>(&self, system: S)
+    pub fn system<P, S>(self: &Arc<Self>, system: S)
     where
         P: SystemParams + Send + Sync + 'static,
         S: ParameterizedSystem<P> + Send + Sync + 'static,
         SystemContainer<P, S>: System,
     {
         let wrapped = Arc::new(system.into_container());
-        self.systems.push(wrapped);
+        self.systems.push(self, wrapped);
     }
 
     pub async fn tick(self: &Arc<Self>) {

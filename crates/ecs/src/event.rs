@@ -62,6 +62,8 @@ impl Events {
                     .downcast_ref()
                     .expect("EventTable type ID does not match event type ID");
 
+                println!("Inserting event");
+
                 table.insert(event)
             },
             // Create new table, it does not exist yet.
@@ -115,6 +117,8 @@ impl Events {
                 self.storage.insert(TypeId::of::<E>(), Box::new(table));
             }
         }
+
+        println!("Subscribed reader");
     }
 
     pub fn remove_reader<E: Event>(&self) {

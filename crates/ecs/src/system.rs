@@ -83,8 +83,11 @@ pub trait SystemParam {
     #[doc(hidden)]
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, state: &Arc<Self::State>) -> Self;
 
+    /// Creates a new state.
     fn state() -> Arc<Self::State>;
+    /// Initializes the parameter for first-time use.
     fn init(_world: &Arc<World>, _state: &Arc<Self::State>) {}
+    /// Deinitializes the parameter for when the system is removed from the ECS.
     fn destroy(_world: &Arc<World>, _state: &Arc<Self::State>) {}
 }
 
@@ -225,14 +228,11 @@ impl Systems {
         Systems::default()
     }
 
-    pub fn push(&self, system: Arc<dyn System + Send + Sync>) {
+    pub fn push(&self, world: &Arc<World>, system: Arc<dyn System + Send + Sync>) {
+        // Initialise system state.
+        system.init(world);
+
         self.storage.write().push(system);
-    }
-
-    pub fn register_state(&self, world: &Arc<World>) {
-        for system in self.storage.read().iter() {
-
-        }
     }
 
     pub async fn call(&self, world: &Arc<World>) {
