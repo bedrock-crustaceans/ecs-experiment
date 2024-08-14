@@ -3,24 +3,19 @@ use ecs_derive::Component;
 use parking_lot::RwLock;
 
 use crate::entity::Entity;
-use crate::{Component, Query, Resource, Without, World};
+use crate::{Component, Event, EventWriter, Query, Resource, Without, World};
 use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
 
-fn mut_system(query: Query<&mut Health, Without<Sleeping>>) {
-    for health in &query {
-        health.0 = f32::MAX;
-    }
-}
-
-fn sleep_system(awake: Query<(Entity, &Health), Without<Sleeping>>, sleeping: Query<(Entity, &Health), With<Sleeping>>) {
-    for (entity, health) in &awake {
-        println!("ID: {:?} has {} health and is awake", entity.id(), health.0);
-    }
-
-    for (entity, health) in &sleeping {
-        println!("ID: {:?} has {} health and is sleeping", entity.id(), health.0);
+fn kill_system(
+    query: Query<(Entity, &Health), With<Sleeping>>,
+    mut writer: EventWriter<Killed>
+) {
+    for (entity, health) in &query {
+        if health.0 == 0.0 {
+            writer.write(Killed { entity });
+        }
     }
 }
 
@@ -58,6 +53,13 @@ struct Sleeping;
 #[derive(Debug, Component)]
 struct Health(f32);
 
+#[derive(Clone)]
+struct Killed {
+    entity: Entity
+}
+
+impl Event for Killed {}
+
 #[tokio::test]
 async fn test() {
     let world = World::new();
@@ -66,12 +68,7 @@ async fn test() {
     world.spawn(Health(1.0));
     world.spawn((Health(2.0), Sleeping));
 
-    world.system(sleep_system);
-    world.system(mut_system);
-    // world.system(health_system);
-    // world.system(death_system);
-    // world.system(sleeping_system);
-    // world.system(zst_system);
+    world.system(kill_system);
 
     world.tick().await;
     world.tick().await;

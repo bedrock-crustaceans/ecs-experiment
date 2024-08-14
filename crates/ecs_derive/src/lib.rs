@@ -1,14 +1,27 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+use proc_macro::TokenStream;
+use quote::quote;
+use syn::{parse::{Parse, ParseStream}, punctuated::Punctuated, token, Attribute, ExprStruct, Field, Ident, ItemStruct, Path, Token};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[proc_macro_derive(Component)]
+pub fn derive_component(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as ItemStruct);
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+    let ItemStruct {
+        attrs,
+        vis,
+        ident,
+        fields,
+        ..
+    } = input;
+    
+    let expanded = quote! {
+        // #(#attrs)*
+        // #vis struct #ident {
+        //     #fields
+        // }
+
+        impl Component for #ident {}
+    };
+
+    TokenStream::from(expanded)
 }

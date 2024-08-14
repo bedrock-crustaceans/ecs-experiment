@@ -1,14 +1,16 @@
 use crate::component::{Components, SpawnBundle};
 use crate::entity::{Entities, Entity, EntityId};
-use crate::{ParameterizedSys, Sys, SysContainer, Systems};
+use crate::{Events, ParameterizedSys, Sys, SysContainer, Systems};
 use std::sync::Arc;
 use crate::scheduler::Scheduler;
 
+#[derive(Default)]
 pub struct World {
     pub(crate) entities: Entities,
     pub(crate) components: Components,
     pub(crate) systems: Systems,
-    pub(crate) scheduler: Scheduler
+    pub(crate) scheduler: Scheduler,
+    pub(crate) events: Events
 }
 
 impl World {
@@ -45,16 +47,5 @@ impl World {
         self.scheduler.pre_tick(self);
         self.systems.call(self).await;
         self.scheduler.post_tick(self);
-    }
-}
-
-impl Default for World {
-    fn default() -> World {
-        World {
-            entities: Entities::default(),
-            components: Components::default(),
-            systems: Systems::default(),
-            scheduler: Scheduler::default()
-        }
     }
 }
