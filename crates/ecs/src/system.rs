@@ -5,7 +5,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, sealed, Query, QueryParams, World};
 
-pub trait Sys {
+pub trait System {
     /// # Safety
     /// 
     /// Before running a system you must ensure that the Rust reference aliasing guarantees are upheld.
@@ -13,45 +13,57 @@ pub trait Sys {
     unsafe fn call(&self, world: Arc<World>);
 }
 
+struct EventState<E: Event> {
+    last_read: usize,
+    _marker: PhantomData<E>
+}
+
+// pub struct SystemState<> {
+//     state
+// }
+
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct SysContainer<P, F: ParameterizedSys<P>> {
+pub struct SystemContainer<P, F: ParameterizedSystem<P>> {
     pub system: F,
+    // pub state: SystemState,
     pub _marker: PhantomData<P>,
 }
 
-impl<F: ParameterizedSys<()>> Sys for SysContainer<(), F> {
+// trait SystemParams []
+
+impl<F: ParameterizedSystem<()>> System for SystemContainer<(), F> {
     unsafe fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-impl<P0, F: ParameterizedSys<P0>> Sys for SysContainer<P0, F>
+impl<P0, F: ParameterizedSystem<P0>> System for SystemContainer<P0, F>
 where
-    P0: SysParam,
+    P0: SystemParam,
 {
     unsafe fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-impl<P0, P1, F: ParameterizedSys<(P0, P1)>> Sys for SysContainer<(P0, P1), F>
+impl<P0, P1, F: ParameterizedSystem<(P0, P1)>> System for SystemContainer<(P0, P1), F>
 where
-    P0: SysParam,
-    P1: SysParam,
+    P0: SystemParam,
+    P1: SystemParam,
 {
     unsafe fn call(&self, world: Arc<World>) {
         self.system.call(world);
     }
 }
 
-pub trait SysParam {
+pub trait SystemParam {
     const MUTABLE: bool;
 
     #[doc(hidden)]
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self;
 }
 
-impl<Q: QueryParams, F: FilterParams> SysParam for Query<Q, F> {
+impl<Q: QueryParams, F: FilterParams> SystemParam for Query<Q, F> {
     const MUTABLE: bool = Q::MUTABLE;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
@@ -59,7 +71,7 @@ impl<Q: QueryParams, F: FilterParams> SysParam for Query<Q, F> {
     }
 }
 
-impl<'a, R: Resource> SysParam for Res<'a, R> {
+impl<'a, R: Resource> SystemParam for Res<'a, R> {
     const MUTABLE: bool = false;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
@@ -67,7 +79,7 @@ impl<'a, R: Resource> SysParam for Res<'a, R> {
     }
 }
 
-impl<'a, R: Resource> SysParam for ResMut<'a, R> {
+impl<'a, R: Resource> SystemParam for ResMut<'a, R> {
     const MUTABLE: bool = true;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
@@ -75,25 +87,25 @@ impl<'a, R: Resource> SysParam for ResMut<'a, R> {
     }
 }
 
-impl<E: Event> SysParam for EventWriter<E> {
+impl<E: Event> SystemParam for EventWriter<E> {
     const MUTABLE: bool = false;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
-        todo!();
+        EventWriter::new(world)
     }
 }
 
-impl<E: Event> SysParam for EventReader<E> {
+impl<E: Event> SystemParam for EventReader<E> {
     const MUTABLE: bool = false;
 
     fn fetch<S: sealed::Sealed>(world: Arc<World>) -> Self {
-        todo!();
+        EventReader::new(world)
     }
 }
 
-pub trait ParameterizedSys<Params>: Sized {
-    fn into_container(self) -> SysContainer<Params, Self> {
-        SysContainer {
+pub trait ParameterizedSystem<Params>: Sized {
+    fn into_container(self) -> SystemContainer<Params, Self> {
+        SystemContainer {
             system: self,
             _marker: PhantomData,
         }
@@ -102,7 +114,7 @@ pub trait ParameterizedSys<Params>: Sized {
     fn call(&self, world: Arc<World>);
 }
 
-impl<F> ParameterizedSys<()> for F
+impl<F> ParameterizedSystem<()> for F
 where
     F: Fn(),
 {
@@ -111,10 +123,10 @@ where
     }
 }
 
-impl<F, P0> ParameterizedSys<P0> for F
+impl<F, P0> ParameterizedSystem<P0> for F
 where
     F: Fn(P0),
-    P0: SysParam,
+    P0: SystemParam,
 {
     fn call(&self, world: Arc<World>) {
         let p0 = P0::fetch::<sealed::Sealer>(world);
@@ -122,11 +134,11 @@ where
     }
 }
 
-impl<F, P0, P1> ParameterizedSys<(P0, P1)> for F
+impl<F, P0, P1> ParameterizedSystem<(P0, P1)> for F
 where
     F: Fn(P0, P1),
-    P0: SysParam,
-    P1: SysParam,
+    P0: SystemParam,
+    P1: SystemParam,
 {
     fn call(&self, world: Arc<World>) {
         let p0 = P0::fetch::<sealed::Sealer>(world.clone());
@@ -136,7 +148,7 @@ where
 }
 
 pub struct Systems {
-    storage: RwLock<Vec<Arc<dyn Sys + Send + Sync>>>,
+    storage: RwLock<Vec<Arc<dyn System + Send + Sync>>>,
 }
 
 impl Systems {
@@ -144,8 +156,14 @@ impl Systems {
         Systems::default()
     }
 
-    pub fn push(&self, system: Arc<dyn Sys + Send + Sync>) {
+    pub fn push(&self, system: Arc<dyn System + Send + Sync>) {
         self.storage.write().push(system);
+    }
+
+    pub fn register_state(&self, world: &Arc<World>) {
+        for system in self.storage.read().iter() {
+
+        }
     }
 
     pub async fn call(&self, world: &Arc<World>) {

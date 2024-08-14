@@ -3,7 +3,7 @@ use ecs_derive::Component;
 use parking_lot::RwLock;
 
 use crate::entity::Entity;
-use crate::{Component, Event, EventWriter, Query, Resource, Without, World};
+use crate::{Component, Event, EventReader, EventWriter, Query, Resource, Without, World};
 use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
@@ -13,9 +13,15 @@ fn kill_system(
     mut writer: EventWriter<Killed>
 ) {
     for (entity, health) in &query {
-        if health.0 == 0.0 {
+        if health.0 <= 0.0 {
             writer.write(Killed { entity });
         }
+    }
+}
+
+fn kill_receiver(mut reader: EventReader<Killed>) {
+    for event in reader.read() {
+        println!("Killed entity {:?}", event.entity.id());
     }
 }
 
@@ -69,6 +75,7 @@ async fn test() {
     world.spawn((Health(2.0), Sleeping));
 
     world.system(kill_system);
+    world.system(kill_receiver);
 
     world.tick().await;
     world.tick().await;
