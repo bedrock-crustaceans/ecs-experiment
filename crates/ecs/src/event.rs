@@ -11,18 +11,24 @@ pub struct EventId(usize);
 
 struct EventSlot<E: Event> {
     /// Remaining readers that have not seen this event yet.
-    /// If this reaches zero, the event is dropped.
+    /// 
+    /// Every time a reader reads this event the counter is decreased by one,
+    /// destroying the slot when the counter reaches zero.
     rem: AtomicUsize,
+    /// The actual event itself.
     event: E
 }
 
-struct EventTable<E: Event> {
+struct EventBus<E: Event> {
+    /// The amount of readers listening to this bus.
     readers: AtomicUsize,
+    /// Next event ID to be assigned.
     next_id: AtomicUsize,
+    /// Currently unread events.
     events: DashMap<usize, EventSlot<E>, BuildNoHashHasher<usize>>
 }
 
-impl<E: Event> EventTable<E> {
+impl<E: Event> EventBus<E> {
     pub fn insert(&self, event: E) -> EventId {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         self.events.insert(id, EventSlot {
@@ -32,12 +38,12 @@ impl<E: Event> EventTable<E> {
     }
 }
 
-trait EventTableKind: Send + Sync {
+trait ErasedEventBus: Send + Sync {
     fn clear(&self);
     fn as_any(&self) -> &dyn Any;
 }
 
-impl<E: Event> EventTableKind for EventTable<E> {
+impl<E: Event> ErasedEventBus for EventBus<E> {
     fn clear(&self) {
         self.events.clear();
     }
@@ -49,7 +55,7 @@ impl<E: Event> EventTableKind for EventTable<E> {
 
 #[derive(Default)]
 pub struct Events {
-    storage: DashMap<TypeId, Box<dyn EventTableKind>>
+    storage: DashMap<TypeId, Box<dyn ErasedEventBus>>
 }
 
 impl Events {
@@ -57,7 +63,7 @@ impl Events {
         match self.storage.get(&TypeId::of::<E>()) {
             // Table already exists, insert into existing.
             Some(table) => {
-                let table: &EventTable<E> = table
+                let table: &EventBus<E> = table
                     .as_any()
                     .downcast_ref()
                     .expect("EventTable type ID does not match event type ID");
@@ -69,7 +75,7 @@ impl Events {
             // Create new table, it does not exist yet.
             // This case happens when there are no readers for an event.
             None => {
-                let table: EventTable<E> = EventTable {
+                let table: EventBus<E> = EventBus {
                     readers: AtomicUsize::new(0),
                     next_id: AtomicUsize::new(1), 
                     events: DashMap::with_capacity_and_hasher(1, BuildNoHashHasher::default())
@@ -87,22 +93,31 @@ impl Events {
 
     pub fn get<E: Event>(&self, id: usize) -> Option<E> {
         let table = self.storage.get(&TypeId::of::<E>())?;
-        let table: &EventTable<E> = table.as_any().downcast_ref().expect("EventTable type ID does not match event type ID");
+        let table: &EventBus<E> = table.as_any().downcast_ref().expect("EventTable type ID does not match event type ID");
 
         let slot = table.events.get(&id)?;
-        let rem = slot.rem.fetch_sub(1, Ordering::SeqCst);
+        let event = slot.event.clone();
 
-        if rem == 0 {
+        // Release reference into map to allow mutation and prevent deadlock.
+
+        let rem = slot.rem.fetch_sub(1, Ordering::SeqCst);
+        drop(slot);
+
+        // AtomicUsize::fetch_sub returns *previous* value so we check for 1 rather than 0.
+        if rem == 1 {
             table.events.remove(&id);
         }
 
-        Some(slot.event.clone())
+        Some(event)
     }
 
+    /// Registers a reader to the specified event bus.
+    /// 
+    /// This should be done for all systems before running any of them.
     pub fn add_reader<E: Event>(&self) {
         match self.storage.get(&TypeId::of::<E>()) {
             Some(table) => {
-                let table: &EventTable<E> = table
+                let table: &EventBus<E> = table
                     .as_any()
                     .downcast_ref()
                     .expect("EventTable type ID does not match event type ID");
@@ -110,7 +125,7 @@ impl Events {
                 table.readers.fetch_add(1, Ordering::SeqCst);
             },
             None => {
-                let table: EventTable<E> = EventTable {
+                let table: EventBus<E> = EventBus {
                     readers: AtomicUsize::new(1), next_id: AtomicUsize::new(0), events: DashMap::with_hasher(BuildNoHashHasher::default())
                 };
 
@@ -121,18 +136,19 @@ impl Events {
         println!("Subscribed reader");
     }
 
+    /// Unregisters a reader from the specified event bus.
     pub fn remove_reader<E: Event>(&self) {
         let Some(table) = self.storage.get(&TypeId::of::<E>()) else {
             return
         };
 
-        let table: &EventTable<E> = table.as_any().downcast_ref().expect("EventTable type ID does not match event type ID");
+        let table: &EventBus<E> = table.as_any().downcast_ref().expect("EventTable type ID does not match event type ID");
         table.readers.fetch_sub(1, Ordering::SeqCst);
     }
 
     pub fn last_assigned<E: Event>(&self) -> Option<EventId> {
         let table = self.storage.get_mut(&TypeId::of::<E>())?;
-        let table: &EventTable<E> = table.as_any().downcast_ref()?;
+        let table: &EventBus<E> = table.as_any().downcast_ref()?;
 
         Some(EventId(table.next_id.load(Ordering::SeqCst) - 1))
     }
@@ -148,6 +164,7 @@ impl<E: Event> EventWriter<E> {
         Self { world: Arc::clone(world), _marker: PhantomData }
     }
 
+    /// Writes an event into the channel, returning its ID.
     pub fn write(&mut self, event: E) -> EventId {
         self.world.events.insert(event)
     }
@@ -164,15 +181,18 @@ impl<E: Event> EventReader<E> {
         Self { world: Arc::clone(world), state: Arc::clone(state), _marker: PhantomData }
     }
 
+    /// The amount of unread events remaining in this reader.
     pub fn len(&self) -> usize {
         let last_assigned = self.world.events.last_assigned::<E>().map(|x| x.0).unwrap_or(0);
         last_assigned - self.state.last_read.load(Ordering::SeqCst)
     }
 
+    /// Whether this reader has any unread events available.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Returns an iterator over unread events.
     pub fn read(&mut self) -> EventIterator<E> {
         EventIterator::from(self)
     }

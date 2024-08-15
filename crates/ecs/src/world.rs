@@ -1,6 +1,6 @@
 use crate::component::{Components, SpawnBundle};
 use crate::entity::{Entities, Entity};
-use crate::{Events, ParameterizedSystem, System, SystemContainer, SystemParams, Systems};
+use crate::{Events, ParameterizedSystem, Resource, Resources, System, SystemContainer, SystemParams, Systems};
 use std::sync::Arc;
 use crate::scheduler::Scheduler;
 
@@ -10,7 +10,8 @@ pub struct World {
     pub(crate) components: Components,
     pub(crate) systems: Systems,
     pub(crate) scheduler: Scheduler,
-    pub(crate) events: Events
+    pub(crate) events: Events,
+    pub(crate) resources: Resources
 }
 
 impl World {
@@ -33,7 +34,11 @@ impl World {
         self.spawn(())
     }
 
-    pub fn system<P, S>(self: &Arc<Self>, system: S)
+    pub fn add_resource<R: Resource>(self: &Arc<Self>, resource: R) {
+        self.resources.insert(resource)
+    }
+
+    pub fn add_system<P, S>(self: &Arc<Self>, system: S)
     where
         P: SystemParams + Send + Sync + 'static,
         S: ParameterizedSystem<P> + Send + Sync + 'static,

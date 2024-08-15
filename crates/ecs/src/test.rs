@@ -3,75 +3,41 @@ use ecs_derive::Component;
 use parking_lot::RwLock;
 
 use crate::entity::Entity;
-use crate::{Component, Event, EventReader, EventWriter, Query, Resource, Without, World};
+use crate::{Component, Event, EventReader, EventWriter, Query, ResMut, Resource, Without, World};
 use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
 
-// fn kill_system(
-//     query: Query<(Entity, &Health), Without<Sleeping>>,
-//     mut writer: EventWriter<Killed>
-// ) {
-//     for (entity, health) in &query {
-//         if health.0 <= 0.0 {
-//             writer.write(Killed { entity });
-//         }
-//     }
-// }
-
-// fn kill_receiver(mut reader: EventReader<Killed>) {
-//     for event in reader.read() {
-//         println!("Killed entity {:?}", event.entity.id());
-//     }
-// }
-
-#[derive(Clone)]
-struct Message {
-    content: &'static str
-}
-
-impl Event for Message {}
-
-fn sender(mut writer: EventWriter<Message>) {
-    writer.write(Message { content: "Hello World!" });
-}
-
-fn receiver(mut reader: EventReader<Message>) {
-    for message in reader.read() {
-        println!("{}", message.content);
+fn detection(
+    query: Query<(Entity, &Health), Without<Immortal>>,
+    mut writer: EventWriter<Killed>
+) {
+    for (entity, health) in &query {
+        if health.0 <= 0.0 {
+            writer.write(Killed { entity });
+        }
     }
 }
 
-// /// Logs the health of all entities.
-// fn health_system(query: Query<(&Health, &Sleeping)>) {
-//     for (health, _sleeping) in &query {
-//         println!("Health: {}", health.0);
-//     }
-// }
+fn execution(mut reader: EventReader<Killed>) {
+    for event in reader.read() {
+        println!("Killing entity {:?}", event.entity.id());
+        event.entity.despawn();
+    }
+}
 
-// /// Logs the health all sleeping entities.
-// fn sleeping_system(query: Query<&Health, With<Sleeping>>) {
-//     for sleeping in &query {
-//         println!("Entity with health {} is sleeping", sleeping.0);
-//     }
-// }
+fn counter(mut counter: ResMut<Counter>) {
+    println!("{:?}", *counter);
+    counter.0 += 1;
+}
 
-// /// System that kills all sleeping entities.
-// fn death_system(query: Query<Entity, With<Sleeping>>) {
-//     for entity in &query {
-//         println!("Despawning entity {} in next tick", entity.id.0);
-//         entity.despawn();
-//     }
-// }
+#[derive(Debug)]
+struct Counter(u32);
 
-// fn zst_system(query: Query<&Sleeping>) {
-//     for zst in &query {
-//         println!("Sleeping");
-//     }
-// }
+impl Resource for Counter {}
 
 #[derive(Debug, Component)]
-struct Sleeping;
+struct Immortal;
 
 #[derive(Debug, Component)]
 struct Health(f32);
@@ -87,14 +53,15 @@ impl Event for Killed {}
 async fn test() {
     let world = World::new();
 
-    // world.spawn(Health(0.0));
-    // world.spawn(Health(1.0));
-    // world.spawn((Health(2.0), Sleeping));
+    world.spawn(Health(0.0));
+    world.spawn(Health(1.0));
+    world.spawn((Health(0.0), Immortal));
 
-    // world.system(kill_system);
-    // world.system(kill_receiver);
-    world.system(sender);
-    world.system(receiver);
+    world.add_resource(Counter(0));
+
+    world.add_system(detection);
+    world.add_system(execution);
+    world.add_system(counter);
 
     world.tick().await;
     // world.tick().await;

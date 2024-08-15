@@ -119,7 +119,12 @@ impl<'a, R: Resource> SystemParam for Res<'a, R> {
     const MUTABLE: bool = false;
 
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
-        todo!();
+        let Some(res) = world.resources.get::<R>() else {
+            panic!("Requested resource {} not found, did you forget to add it to the World?", std::any::type_name::<R>());
+        };
+
+        todo!()
+        // Res { inner: res }
     }
 
     fn state() -> Arc<Self::State> { Arc::new(()) }
