@@ -3,7 +3,7 @@ use ecs_derive::Component;
 use parking_lot::RwLock;
 
 use crate::entity::Entity;
-use crate::{Component, Event, EventReader, EventWriter, Query, ResMut, Resource, Without, World};
+use crate::{Component, EntityId, Event, EventReader, EventWriter, Query, ResMut, Resource, Without, World};
 use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
@@ -14,15 +14,14 @@ fn detection(
 ) {
     for (entity, health) in &query {
         if health.0 <= 0.0 {
-            writer.write(Killed { entity });
+            writer.write(Killed { entity: entity.id() });
         }
     }
 }
 
 fn execution(mut reader: EventReader<Killed>) {
     for event in reader.read() {
-        println!("Killing entity {:?}", event.entity.id());
-        event.entity.despawn();
+        println!("Killing entity {:?}", event.entity);
     }
 }
 
@@ -44,7 +43,7 @@ struct Health(f32);
 
 #[derive(Clone)]
 struct Killed {
-    entity: Entity
+    entity: EntityId
 }
 
 impl Event for Killed {}

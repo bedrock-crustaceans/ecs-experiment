@@ -563,17 +563,17 @@ pub trait QueryParams {
 
     const MUTABLE: bool;
 
-    fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>>;
+    fn fetch<'w>(world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>>;
     fn acquire_locks(world: &World) -> EcsResult<()>;
     fn release_locks(world: &World);
 }
 
-impl QueryParams for Entity {
-    type Fetchable<'query> = Entity;
+impl QueryParams for Entity<'_> {
+    type Fetchable<'query> = Entity<'query>;
 
     const MUTABLE: bool = false;
 
-    fn fetch<'w>(_world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
+    fn fetch<'w>(_world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>> {
         Some(entity)
     }
 
@@ -586,7 +586,7 @@ impl<T: Component> QueryParams for &T {
 
     const MUTABLE: bool = false;
 
-    fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
+    fn fetch<'w>(world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>> {
         debug_assert_eq!(TypeId::of::<&T>(), TypeId::of::<Self::Fetchable<'static>>(), "QueryParams::Fetchable is incorrect type");
 
         // Instead of keeping track of lock guards like before, we should instead access the components directly.
@@ -651,7 +651,7 @@ impl<T: Component> QueryParams for &mut T {
 
     const MUTABLE: bool = true;
 
-    fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
+    fn fetch<'w>(world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>> {
         debug_assert_eq!(TypeId::of::<&mut T>(), TypeId::of::<Self::Fetchable<'static>>(), "QueryParams::Fetchable is incorrect type");
 
         // Instead of keeping track of lock guards like before, we should instead access the components directly.
@@ -716,7 +716,7 @@ impl<Q1: QueryParams, Q2: QueryParams> QueryParams for (Q1, Q2) {
 
     const MUTABLE: bool = Q1::MUTABLE || Q2::MUTABLE;
 
-    fn fetch<'w>(world: &'w Arc<World>, entity: Entity) -> Option<Self::Fetchable<'w>> {
+    fn fetch<'w>(world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>> {
         let q1 = Q1::fetch(world, entity.clone())?;
         let q2 = Q2::fetch(world, entity)?;
 
