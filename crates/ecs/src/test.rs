@@ -3,7 +3,7 @@ use ecs_derive::Component;
 use parking_lot::RwLock;
 
 use crate::entity::Entity;
-use crate::{Component, EntityId, Event, EventReader, EventWriter, Query, ResMut, Resource, Without, World};
+use crate::{Component, EntityId, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, Without, World};
 use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
@@ -28,6 +28,10 @@ fn execution(mut reader: EventReader<Killed>) {
 fn counter(mut counter: ResMut<Counter>) {
     println!("{:?}", *counter);
     counter.0 += 1;
+}
+
+fn counter2(counter: Res<Counter>) {
+    println!("Counter: {}", counter.0);
 }
 
 #[derive(Debug)]
@@ -61,7 +65,7 @@ async fn test() {
     world.add_system(detection);
     world.add_system(execution);
     world.add_system(counter);
+    world.add_system(counter2);
 
     world.tick().await;
-    // world.tick().await;
 }

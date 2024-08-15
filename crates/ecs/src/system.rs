@@ -1,7 +1,7 @@
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use parking_lot::RwLock;
-use std::{marker::PhantomData, sync::{atomic::AtomicUsize, Arc}};
+use std::{marker::PhantomData, sync::{atomic::{AtomicBool, AtomicUsize}, Arc}};
 
 use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, sealed, EventState, Query, QueryParams, World};
 
@@ -119,7 +119,7 @@ impl<R: Resource> SystemParam for Res<R> {
     const MUTABLE: bool = false;
 
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
-        Res { world: Arc::clone(world), _marker: PhantomData }
+        Res { locked: AtomicBool::new(false), world: Arc::clone(world), _marker: PhantomData }
     }
 
     fn state() -> Arc<Self::State> { Arc::new(()) }
@@ -131,7 +131,7 @@ impl<R: Resource> SystemParam for ResMut<R> {
     const MUTABLE: bool = true;
 
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
-        ResMut { world: Arc::clone(world), _marker: PhantomData }
+        ResMut { locked: AtomicBool::new(false), world: Arc::clone(world), _marker: PhantomData }
     }
 
     fn state() -> Arc<Self::State> { Arc::new(()) }
