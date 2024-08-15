@@ -1,5 +1,5 @@
 use crate::entity::EntityId;
-use crate::{EcsError, EcsResult};
+use crate::{EcsError, EcsResult, LockMarker};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::any::{Any, TypeId};
@@ -40,46 +40,8 @@ pub trait TypelessStorage: Send + Sync {
     fn has_entity(&self, entity: EntityId) -> bool;
 }
 
-pub struct StorageLock {
-    counter: AtomicUsize
-}
-
-impl StorageLock {
-    pub fn new() -> Self {
-        Self { counter: AtomicUsize::new(0) }
-    }
-
-    pub fn acquire_read(&self) -> EcsResult<()> {
-        if self.counter.load(Ordering::SeqCst) == usize::MAX {
-            // Lock is already being used for writing.
-            return Err(EcsError::StorageLocked("write lock active, cannot acquire read lock"))
-        }
-
-        self.counter.fetch_add(1, Ordering::SeqCst);
-        Ok(())        
-    }
-
-    pub fn release_read(&self) {
-        self.counter.fetch_sub(1, Ordering::SeqCst);
-    }
-
-    pub fn acquire_write(&self) -> EcsResult<()> {
-        if self.counter.load(Ordering::SeqCst) != 0 {
-            // Lock is already being used for reading.
-            return Err(EcsError::StorageLocked("read or write lock active, cannot acquire write lock"))
-        }
-
-        self.counter.store(usize::MAX, Ordering::SeqCst);
-        Ok(())
-    }
-
-    pub fn release_write(&self) {
-        self.counter.store(0, Ordering::SeqCst);
-    }
-}
-
 pub struct TypedStorage<T> {
-    pub(crate) lock: StorageLock,
+    pub(crate) lock: LockMarker,
 
     pub(crate) map: DashMap<EntityId, usize>,
     pub(crate) reverse_map: RwLock<Vec<EntityId>>,
@@ -89,7 +51,7 @@ pub struct TypedStorage<T> {
 impl<T: Send + Sync + 'static> TypedStorage<T> {
     pub fn with(entity: EntityId, component: T) -> Box<dyn TypelessStorage> {
         Box::new(Self {
-            lock: StorageLock::new(),
+            lock: LockMarker::new(),
             map: DashMap::from_iter([(entity, 0)]),
             reverse_map: RwLock::new(vec![entity]),
             storage: RwLock::new(vec![component]),
@@ -124,7 +86,7 @@ impl<T: Send + Sync + 'static> TypedStorage<T> {
 impl<T> Default for TypedStorage<T> {
     fn default() -> Self {
         Self {
-            lock: StorageLock::new(),
+            lock: LockMarker::new(),
             map: DashMap::new(),
             reverse_map: RwLock::new(Vec::new()),
             storage: RwLock::new(Vec::new()),

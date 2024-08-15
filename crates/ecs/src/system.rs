@@ -113,30 +113,25 @@ impl<Q: QueryParams, F: FilterParams> SystemParam for Query<Q, F> {
     fn state() -> Arc<Self::State> { Arc::new(()) }
 }
 
-impl<'a, R: Resource> SystemParam for Res<'a, R> {
+impl<R: Resource> SystemParam for Res<R> {
     type State = ();
 
     const MUTABLE: bool = false;
 
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
-        let Some(res) = world.resources.get::<R>() else {
-            panic!("Requested resource {} not found, did you forget to add it to the World?", std::any::type_name::<R>());
-        };
-
-        todo!()
-        // Res { inner: res }
+        Res { world: Arc::clone(world), _marker: PhantomData }
     }
 
     fn state() -> Arc<Self::State> { Arc::new(()) }
 }
 
-impl<'a, R: Resource> SystemParam for ResMut<'a, R> {
+impl<R: Resource> SystemParam for ResMut<R> {
     type State = ();
 
     const MUTABLE: bool = true;
 
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
-        todo!();
+        ResMut { world: Arc::clone(world), _marker: PhantomData }
     }
 
     fn state() -> Arc<Self::State> { Arc::new(()) }

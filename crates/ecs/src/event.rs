@@ -38,12 +38,12 @@ impl<E: Event> EventBus<E> {
     }
 }
 
-trait ErasedEventBus: Send + Sync {
+trait EventHolder: Send + Sync {
     fn clear(&self);
     fn as_any(&self) -> &dyn Any;
 }
 
-impl<E: Event> ErasedEventBus for EventBus<E> {
+impl<E: Event> EventHolder for EventBus<E> {
     fn clear(&self) {
         self.events.clear();
     }
@@ -55,7 +55,7 @@ impl<E: Event> ErasedEventBus for EventBus<E> {
 
 #[derive(Default)]
 pub struct Events {
-    storage: DashMap<TypeId, Box<dyn ErasedEventBus>>
+    storage: DashMap<TypeId, Box<dyn EventHolder>>
 }
 
 impl Events {

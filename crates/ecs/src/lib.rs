@@ -11,7 +11,9 @@ mod world;
 mod scheduler;
 mod filter;
 mod error;
+mod util;
 
+pub use util::*;
 pub use error::*;
 pub use component::*;
 pub use entity::*;
