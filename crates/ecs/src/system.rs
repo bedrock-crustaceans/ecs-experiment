@@ -5,33 +5,33 @@ use std::{marker::PhantomData, sync::{atomic::AtomicUsize, Arc}};
 
 use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, sealed, EventState, Query, QueryParams, World};
 
-pub trait System {
+pub trait System<'w> {
     /// # Safety
     /// 
     /// Before running a system you must ensure that the Rust reference aliasing guarantees are upheld.
     /// Any systems requiring mutable access to a component must have unique access.
-    unsafe fn call(&self, world: &Arc<World>);
+    unsafe fn call(&self, world: &'w World);
 
     /// Runs any preparations before a system's first run.
     /// This is for example used to register all active event readers.
-    fn init(&self, world: &Arc<World>) {}
-    fn destroy(&self, world: &Arc<World>) {}
+    fn init(&self, world: &'w World) {}
+    fn destroy(&self, world: &'w World) {}
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct SystemContainer<P: SystemParams, F: ParameterizedSystem<P>> {
+pub struct SystemContainer<'w, P: SystemParams<'w>, F: ParameterizedSystem<'w, P>> {
     pub system: F,
     pub state: P::ArcState,
     pub _marker: PhantomData<P>,
 }
 
-pub trait SystemParams {
+pub trait SystemParams<'w> {
     type ArcState: Send + Sync;
 
     fn state() -> Self::ArcState;
 }
 
-impl<P: SystemParam> SystemParams for P {
+impl<'w, P: SystemParam<'w>> SystemParams<'w> for P {
     type ArcState = Arc<P::State>;
 
     fn state() -> Self::ArcState {
@@ -39,7 +39,7 @@ impl<P: SystemParam> SystemParams for P {
     }
 }
 
-impl<P1: SystemParam, P2: SystemParam> SystemParams for (P1, P2) {
+impl<'w, P1: SystemParam<'w>, P2: SystemParam<'w>> SystemParams<'w> for (P1, P2) {
     type ArcState = (Arc<P1::State>, Arc<P2::State>);
 
     fn state() -> Self::ArcState {
@@ -47,78 +47,78 @@ impl<P1: SystemParam, P2: SystemParam> SystemParams for (P1, P2) {
     }
 }
 
-impl<P0, F: ParameterizedSystem<P0>> System for SystemContainer<P0, F>
+impl<'w, P0, F: ParameterizedSystem<'w, P0>> System<'w> for SystemContainer<'w, P0, F>
 where
-    P0: SystemParam,
+    P0: SystemParam<'w>,
 {
-    unsafe fn call(&self, world: &Arc<World>) {
+    unsafe fn call(&self, world: &'w World) {
         self.system.call(world, &self.state);
     }
 
-    fn init(&self, world: &Arc<World>) {
+    fn init(&self, world: &'w World) {
         P0::init(world, &self.state);
     }
 }
 
-impl<P0, P1, F: ParameterizedSystem<(P0, P1)>> System for SystemContainer<(P0, P1), F>
+impl<'w, P0, P1, F: ParameterizedSystem<'w, (P0, P1)>> System<'w> for SystemContainer<'w, (P0, P1), F>
 where
-    P0: SystemParam,
-    P1: SystemParam,
+    P0: SystemParam<'w>,
+    P1: SystemParam<'w>,
 {
-    unsafe fn call(&self, world: &Arc<World>) {
+    unsafe fn call(&self, world: &'w World) {
         self.system.call(world, &self.state);
     }
 
-    fn init(&self, world: &Arc<World>) {
+    fn init(&self, world: &'w World) {
         P0::init(world, &self.state.0);
         P1::init(world, &self.state.1);
     }
 }
 
-pub trait SystemParam {
+pub trait SystemParam<'w> {
     type State: Send + Sync;
 
     const MUTABLE: bool;
 
     #[doc(hidden)]
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, state: &Arc<Self::State>) -> Self;
+    fn fetch<S: sealed::Sealed>(world: &'w World, state: &Arc<Self::State>) -> Self;
 
     /// Creates a new state.
     fn state() -> Arc<Self::State>;
     /// Initializes the parameter for first-time use.
-    fn init(_world: &Arc<World>, _state: &Arc<Self::State>) {}
+    fn init(_world: &'w World, _state: &Arc<Self::State>) {}
     /// Deinitializes the parameter for when the system is removed from the ECS.
-    fn destroy(_world: &Arc<World>, _state: &Arc<Self::State>) {}
+    fn destroy(_world: &'w World, _state: &Arc<Self::State>) {}
 }
 
-impl SystemParam for () {
+impl<'w> SystemParam<'w> for () {
     type State = ();
 
     const MUTABLE: bool = false;
 
-    fn fetch<S: sealed::Sealed>(_world: &Arc<World>, _state: &Arc<Self::State>) -> Self {}
+    fn fetch<S: sealed::Sealed>(_world: &'w World, _state: &Arc<Self::State>) -> Self {}
 
     fn state() -> Arc<Self::State> { Arc::new(()) }
 }
 
-impl<Q: QueryParams, F: FilterParams> SystemParam for Query<Q, F> {
+impl<'w, Q: QueryParams, F: FilterParams> SystemParam<'w> for Query<'w, Q, F> {
     type State = ();
 
     const MUTABLE: bool = Q::MUTABLE;
 
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
+    fn fetch<S: sealed::Sealed>(world: &'w World, _state: &Arc<Self::State>) -> Self {
         Query::new(world).expect("Failed to create query")
     }
 
     fn state() -> Arc<Self::State> { Arc::new(()) }
 }
 
-impl<'a, R: Resource> SystemParam for Res<'a, R> {
+impl<'w, R: Resource> SystemParam<'w> for Res<'w, R> {
     type State = ();
 
     const MUTABLE: bool = false;
 
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
+    fn fetch<S: sealed::Sealed>(world: &'w World, _state: &Arc<Self::State>) -> Self {
         let Some(res) = world.resources.get::<R>() else {
             panic!("Requested resource {} not found, did you forget to add it to the World?", std::any::type_name::<R>());
         };
@@ -130,36 +130,36 @@ impl<'a, R: Resource> SystemParam for Res<'a, R> {
     fn state() -> Arc<Self::State> { Arc::new(()) }
 }
 
-impl<'a, R: Resource> SystemParam for ResMut<'a, R> {
+impl<'w, R: Resource> SystemParam<'w> for ResMut<'w, R> {
     type State = ();
 
     const MUTABLE: bool = true;
 
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
+    fn fetch<S: sealed::Sealed>(world: &'w World, _state: &Arc<Self::State>) -> Self {
         todo!();
     }
 
     fn state() -> Arc<Self::State> { Arc::new(()) }
 }
 
-impl<E: Event> SystemParam for EventWriter<E> {
+impl<'w, E: Event> SystemParam<'w> for EventWriter<'w, E> {
     type State = ();
 
     const MUTABLE: bool = false;
 
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
+    fn fetch<S: sealed::Sealed>(world: &'w World, _state: &Arc<Self::State>) -> Self {
         EventWriter::new(world)
     }
 
     fn state() -> Arc<Self::State> { Arc::new(()) }
 }
 
-impl<E: Event> SystemParam for EventReader<E> {
+impl<'w, E: Event> SystemParam<'w> for EventReader<'w, E> {
     type State = EventState<E>;
 
     const MUTABLE: bool = false;
 
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, state: &Arc<Self::State>) -> Self {
+    fn fetch<S: sealed::Sealed>(world: &'w World, state: &Arc<Self::State>) -> Self {
         EventReader::new(world, state)
     }
 
@@ -170,17 +170,17 @@ impl<E: Event> SystemParam for EventReader<E> {
         })
     }
 
-    fn init(world: &Arc<World>, _state: &Arc<Self::State>) {
+    fn init(world: &'w World, _state: &Arc<Self::State>) {
         world.events.add_reader::<E>();
     }
 
-    fn destroy(world: &Arc<World>, _state: &Arc<Self::State>) {
+    fn destroy(world: &'w World, _state: &Arc<Self::State>) {
         world.events.remove_reader::<E>();
     }
 }
 
-pub trait ParameterizedSystem<P: SystemParams>: Sized {
-    fn into_container(self) -> SystemContainer<P, Self> {
+pub trait ParameterizedSystem<'w, P: SystemParams<'w>>: Sized {
+    fn into_container(self) -> SystemContainer<'w, P, Self> {
         SystemContainer {
             system: self,
             state: P::state(),
@@ -188,7 +188,7 @@ pub trait ParameterizedSystem<P: SystemParams>: Sized {
         }
     }
 
-    fn call(&self, world: &Arc<World>, state: &P::ArcState);
+    fn call(&self, world: &'w World, state: &P::ArcState);
 }
 
 // impl<F> ParameterizedSystem<()> for F
@@ -200,69 +200,69 @@ pub trait ParameterizedSystem<P: SystemParams>: Sized {
 //     }
 // }
 
-impl<F, P0> ParameterizedSystem<P0> for F
+impl<'w, F, P0> ParameterizedSystem<'w, P0> for F
 where
     F: Fn(P0),
-    P0: SystemParam,
+    P0: SystemParam<'w>,
 {
-    fn call(&self, world: &Arc<World>, state: &Arc<P0::State>) {
+    fn call(&self, world: &'w World, state: &Arc<P0::State>) {
         let p0 = P0::fetch::<sealed::Sealer>(world, state);
         self(p0);
     }
 }
 
-impl<F, P0, P1> ParameterizedSystem<(P0, P1)> for F
+impl<'w, F, P0, P1> ParameterizedSystem<'w, (P0, P1)> for F
 where
     F: Fn(P0, P1),
-    P0: SystemParam,
-    P1: SystemParam,
+    P0: SystemParam<'w>,
+    P1: SystemParam<'w>,
 {
-    fn call(&self, world: &Arc<World>, state: &<(P0, P1) as SystemParams>::ArcState) {
+    fn call(&self, world: &'w World, state: &<(P0, P1) as SystemParams<'w>>::ArcState) {
         let p0 = P0::fetch::<sealed::Sealer>(world, &state.0);
         let p1 = P1::fetch::<sealed::Sealer>(world, &state.1);
         self(p0, p1);
     }
 }
 
-pub struct Systems {
-    storage: RwLock<Vec<Arc<dyn System + Send + Sync>>>,
+pub struct Systems<'w> {
+    storage: RwLock<Vec<Arc<dyn System<'w> + Send + Sync>>>,
 }
 
-impl Systems {
-    pub fn new() -> Systems {
+impl<'w, 'wi> Systems<'w> {
+    pub fn new() -> Systems<'w> {
         Systems::default()
     }
 
-    pub fn push(&self, world: &Arc<World>, system: Arc<dyn System + Send + Sync>) {
+    pub fn push(&self, world: &'w World, system: Arc<dyn System<'w> + Send + Sync>) {
         // Initialise system state.
         system.init(world);
 
         self.storage.write().push(system);
     }
 
-    pub async fn call(&self, world: &Arc<World>) {
-        let mut futures = FuturesUnordered::new();
+    pub async fn call(&self, world: &'w World<'wi>) {
+        // let mut futures = FuturesUnordered::new();
 
         // FIXME: Reduce the amount of arc cloning required. I could maybe remove it altogether.
         for sys_index in 0..self.storage.read().len() {
-            let world = Arc::clone(world);
-            futures.push(tokio::spawn(async move {
-                let lock = world.systems.storage.read();
-                let sys = &lock[sys_index];
+            // futures.push(tokio::spawn(async move {
+            //     let lock = world.systems.storage.read();
+            //     let sys = &lock[sys_index];
 
-                unsafe {
-                    sys.call(&world);
-                }
-            }));
+            //     unsafe {
+            //         sys.call(&world);
+            //     }
+            // }));
+            todo!()
         }
 
         // Run all futures to completion
-        while let Some(_) = futures.next().await {}
+        // while let Some(_) = futures.next().await {}
     }
 }
 
-impl Default for Systems {
-    fn default() -> Systems {
+impl<'w> Default for Systems<'w> {
+    fn default() -> Systems<'w> {
         Systems {
             storage: RwLock::new(Vec::new()),
         }

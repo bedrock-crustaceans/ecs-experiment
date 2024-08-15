@@ -154,14 +154,14 @@ impl Events {
     }
 }
 
-pub struct EventWriter<E: Event> {
-    world: Arc<World>,
+pub struct EventWriter<'wb, 'w, E: Event> {
+    world: &'wb World<'w> ,
     _marker: PhantomData<E>,
 }
 
-impl<E: Event> EventWriter<E> {
-    pub(crate) fn new(world: &Arc<World>) -> Self {
-        Self { world: Arc::clone(world), _marker: PhantomData }
+impl<'wb, 'w, E: Event> EventWriter<'wb, 'w, E> {
+    pub(crate) fn new(world: &'wb World<'w>) -> Self {
+        Self { world, _marker: PhantomData }
     }
 
     /// Writes an event into the channel, returning its ID.
@@ -170,15 +170,15 @@ impl<E: Event> EventWriter<E> {
     }
 }
 
-pub struct EventReader<E: Event> {
-    world: Arc<World>,
+pub struct EventReader<'wb, 'w, E: Event> {
+    world: &'wb World<'w>,
     state: Arc<EventState<E>>,
     _marker: PhantomData<E>,
 }
 
-impl<E: Event> EventReader<E> {
-    pub(crate) fn new(world: &Arc<World>, state: &Arc<EventState<E>>) -> Self {
-        Self { world: Arc::clone(world), state: Arc::clone(state), _marker: PhantomData }
+impl<'wb, 'w, E: Event> EventReader<'wb, 'w, E> {
+    pub(crate) fn new(world: &'wb World<'w>, state: &Arc<EventState<E>>) -> Self {
+        Self { world, state: Arc::clone(state), _marker: PhantomData }
     }
 
     /// The amount of unread events remaining in this reader.
@@ -193,7 +193,7 @@ impl<E: Event> EventReader<E> {
     }
 
     /// Returns an iterator over unread events.
-    pub fn read(&mut self) -> EventIterator<E> {
+    pub fn read(&mut self) -> EventIterator<'wb, 'w, '_, E> {
         EventIterator::from(self)
     }
 
@@ -202,11 +202,11 @@ impl<E: Event> EventReader<E> {
     }
 }
 
-pub struct EventIterator<'reader, E: Event> {
-    reader: &'reader mut EventReader<E>
+pub struct EventIterator<'wb, 'w, 'r, E: Event> {
+    reader: &'r mut EventReader<'wb, 'w, E>
 }
 
-impl<'reader, E: Event> Iterator for EventIterator<'reader, E> {
+impl<'wb, 'w, 'r, E: Event> Iterator for EventIterator<'wb, 'w, 'r, E> {
     type Item = E;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -215,14 +215,14 @@ impl<'reader, E: Event> Iterator for EventIterator<'reader, E> {
     }
 }
 
-impl<'reader, E: Event> From<&'reader mut EventReader<E>> for EventIterator<'reader, E> {
-    fn from(reader: &'reader mut EventReader<E>) -> Self {
+impl<'wb, 'w, 'r, E: Event> From<&'r mut EventReader<'wb, 'w, E>> for EventIterator<'wb, 'w, 'r, E> {
+    fn from(reader: &'r mut EventReader<'wb, 'w, E>) -> Self {
         Self { reader }
     }
 }
 
-pub struct EventParIterator<'reader, E: Event> {
-    reader: &'reader mut EventReader<E>
+pub struct EventParIterator<'wb, 'w, 'r, E: Event> {
+    reader: &'r mut EventReader<'wb, 'w, E>
 }
 
 pub trait Event: Clone + Send + Sync + 'static {}

@@ -11,12 +11,12 @@ use parking_lot::{RwLock, RwLockReadGuard};
 pub struct EntityId(pub(crate) usize);
 
 #[derive(Clone)]
-pub struct Entity<'w> {
-    pub(crate) world: &'w World,
+pub struct Entity<'wb, 'w> {
+    pub(crate) world: &'wb World<'w>,
     pub(crate) id: EntityId,
 }
 
-impl<'w> Entity<'w> {
+impl<'wb, 'w> Entity<'wb, 'w> {
     pub fn id(&self) -> EntityId {
         self.id
     }
@@ -93,7 +93,7 @@ impl Entities {
         }
     }
 
-    pub fn iter<'a, F: FilterParams>(&'a self, world: &'a Arc<World>) -> EntityIter<'a, F> {
+    pub fn iter<'wb, 'w, F: FilterParams>(&'wb self, world: &'wb World<'w>) -> EntityIter<'wb, 'w, F> {
         let entities = self.indices.read();
         EntityIter {
             world, entities, iter_index: 0, _marker: PhantomData
@@ -101,21 +101,21 @@ impl Entities {
     }
 }
 
-pub(crate) struct EntityIter<'w, F>
+pub(crate) struct EntityIter<'wb, 'w, F>
 where
     F: FilterParams
 {
-    pub world: &'w World,
-    pub entities: RwLockReadGuard<'w, BitVec>,
+    pub world: &'wb World<'w>,
+    pub entities: RwLockReadGuard<'wb, BitVec>,
     pub iter_index: usize,
-    pub _marker: PhantomData<&'w F>
+    pub _marker: PhantomData<&'wb F>
 }
 
-impl<'w, F> Iterator for EntityIter<'w, F>
+impl<'wb, 'w, F> Iterator for EntityIter<'wb, 'w, F>
 where
     F: FilterParams
 {
-    type Item = Entity<'w>;
+    type Item = Entity<'wb, 'w>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Use a loop rather than recursion for cache reasons.
@@ -137,4 +137,4 @@ where
     }
 }
 
-impl<F: FilterParams> FusedIterator for EntityIter<'_, F> {}
+impl<'wb, 'w, F: FilterParams> FusedIterator for EntityIter<'wb, 'w, F> {}

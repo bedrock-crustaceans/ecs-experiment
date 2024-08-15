@@ -5,21 +5,21 @@ use std::sync::Arc;
 use crate::scheduler::Scheduler;
 
 #[derive(Default)]
-pub struct World {
+pub struct World<'w> {
     pub(crate) entities: Entities,
     pub(crate) components: Components,
-    pub(crate) systems: Systems,
+    pub(crate) systems: Systems<'w>,
     pub(crate) scheduler: Scheduler,
     pub(crate) events: Events,
     pub(crate) resources: Resources
 }
 
-impl World {
-    pub fn new() -> Arc<World> {
-        Arc::new(World::default())
+impl<'w> World<'w> {
+    pub fn new() -> World<'w> {
+        World::default()
     }
 
-    pub fn spawn<B: SpawnBundle>(&self, bundle: B) -> Entity {
+    pub fn spawn<'e, B: SpawnBundle>(&'e self, bundle: B) -> Entity<'e> where 'e: 'w {
         let entity = self.entities.alloc();
         bundle.insert_into(&self.components, entity);
 
@@ -30,7 +30,7 @@ impl World {
     }
 
     #[inline]
-    pub fn spawn_empty(self: &Arc<Self>) -> Entity {
+    pub fn spawn_empty<'e>(&'e self) -> Entity<'e> where 'e: 'w {
         self.spawn(())
     }
 
@@ -38,11 +38,11 @@ impl World {
         self.resources.insert(resource)
     }
 
-    pub fn add_system<P, S>(self: &Arc<Self>, system: S)
+    pub fn add_system<P, S>(&self, system: S)
     where
-        P: SystemParams + Send + Sync + 'static,
-        S: ParameterizedSystem<P> + Send + Sync + 'static,
-        SystemContainer<P, S>: System,
+        P: SystemParams<'w> + Send + Sync + 'static,
+        S: ParameterizedSystem<'w, P> + Send + Sync + 'static,
+        SystemContainer<'w, P, S>: System<'w>,
     {
         let wrapped = Arc::new(system.into_container());
         self.systems.push(self, wrapped);
