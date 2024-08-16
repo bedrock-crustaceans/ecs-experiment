@@ -1,18 +1,22 @@
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use parking_lot::RwLock;
-use std::{future::Future, marker::PhantomData, pin::Pin, sync::{atomic::{AtomicBool, AtomicUsize}, Arc}};
+use std::{any::TypeId, future::Future, marker::PhantomData, pin::Pin, sync::{atomic::{AtomicBool, AtomicUsize}, Arc}};
 
 use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, sealed, EventState, Query, QueryParams, World};
 
-pub trait System {
+pub unsafe trait System {
     /// # Safety
     /// 
     /// Before running a system you must ensure that the Rust reference aliasing guarantees are upheld.
     /// Any systems requiring mutable access to a component must have unique access.
-    unsafe fn call(&self, world: &Arc<World>);
+    fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>;
 
     /// This function takes a self parameter to make [`System`] object-safe.
+    /// 
+    /// # Safety
+    /// 
+    /// This function *must* only return `true` for systems that return the type `Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
     fn is_async(&self) -> bool;
 
     /// Runs any preparations before a system's first run.
@@ -50,13 +54,23 @@ impl<P1: SystemParam, P2: SystemParam> SystemParams for (P1, P2) {
     }
 }
 
-impl<P0, R, F: ParameterizedSystem<P0, R>> System for FnContainer<P0, R, F>
+unsafe impl<P0, R, F: ParameterizedSystem<P0, R>> System for FnContainer<P0, R, F>
 where
     P0: SystemParam,
     R: SystemReturnable
 {
-    unsafe fn call(&self, world: &Arc<World>) {
-        let _returned = self.system.call(world, &self.state);
+    fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
+        let returned = self.system.call(world, &self.state);
+        if self.is_async() {   
+            // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
+            // It is therefore safe to transmute as both types are equal.
+            unsafe {
+                std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(&returned)
+            }
+        } else {
+            // Return empty future.
+            Box::pin(async {})
+        }
     }
 
     #[inline]
@@ -69,14 +83,24 @@ where
     }
 }
 
-impl<P0, P1, R, F: ParameterizedSystem<(P0, P1), R>> System for FnContainer<(P0, P1), R, F>
+unsafe impl<P0, P1, R, F: ParameterizedSystem<(P0, P1), R>> System for FnContainer<(P0, P1), R, F>
 where
     P0: SystemParam,
     P1: SystemParam,
     R: SystemReturnable
 {
-    unsafe fn call(&self, world: &Arc<World>) {
-        let _returned = self.system.call(world, &self.state);
+    fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
+        let returned = self.system.call(world, &self.state);
+        if self.is_async() {   
+            // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
+            // It is therefore safe to transmute as both types are equal.
+            unsafe {
+                std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(&returned)
+            }
+        } else {
+            // Return empty future.
+            Box::pin(async {})
+        }
     }
 
     #[inline]
@@ -264,11 +288,6 @@ impl Systems {
     pub fn push(&self, world: &Arc<World>, system: Arc<dyn System + Send + Sync>) {
         // Initialise system state.
         system.init(world);
-
-        if system.is_async() {
-            println!("Pushing async system");
-        }
-        
         self.storage.write().push(system);
     }
 
@@ -283,7 +302,7 @@ impl Systems {
                 let sys = &lock[sys_index];
 
                 unsafe {
-                    sys.call(&world);
+                    sys.call(&world).await;
                 }
             }));
         }
