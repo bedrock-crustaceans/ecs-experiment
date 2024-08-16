@@ -30,7 +30,7 @@ fn execution(mut reader: EventReader<Killed>, mut counter: ResMut<KillCounter>) 
 
 async fn async_system(query: Query<Entity, With<Immortal>>) {
     for entity in &query {
-        println!("Entity {:?}", entity.id());
+        println!("IMMORTAL {:?}", entity.id());
     }
 }
 

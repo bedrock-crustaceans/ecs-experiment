@@ -62,11 +62,17 @@ where
     fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
         let returned = self.system.call(world, &self.state);
         if self.is_async() {   
+            debug_assert_eq!(TypeId::of::<R>(), TypeId::of::<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>());
+
             // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
             // It is therefore safe to transmute as both types are equal.
-            unsafe {
+            let cast = unsafe {
                 std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(&returned)
-            }
+            };
+            // Prevent dropping the Box, preventing a use-after-free.
+            std::mem::forget(returned);
+
+            cast
         } else {
             // Return empty future.
             Box::pin(async {})
@@ -92,11 +98,17 @@ where
     fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
         let returned = self.system.call(world, &self.state);
         if self.is_async() {   
+            debug_assert_eq!(TypeId::of::<R>(), TypeId::of::<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>());
+
             // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
             // It is therefore safe to transmute as both types are equal.
-            unsafe {
+            let cast = unsafe {
                 std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(&returned)
-            }
+            };
+            // Prevent dropping the Box, preventing a use-after-free.
+            std::mem::forget(returned);
+
+            cast
         } else {
             // Return empty future.
             Box::pin(async {})
@@ -217,7 +229,7 @@ impl<E: Event> SystemParam for EventReader<E> {
 /// 
 /// This is useful for async systems which return futures but is also implemented for unit in the case of sync systems.
 /// In the future this could possibly also be used for returning errors or something in that direction.
-pub trait SystemReturnable {
+pub trait SystemReturnable: 'static {
     const IS_ASYNC: bool;
 }
 
@@ -294,16 +306,13 @@ impl Systems {
     pub async fn call(&self, world: &Arc<World>) {
         let mut futures = FuturesUnordered::new();
 
-        // FIXME: Reduce the amount of arc cloning required. I could maybe remove it altogether.
+        let lock = self.storage.read();
         for sys_index in 0..self.storage.read().len() {
             let world = Arc::clone(world);
+            
+            let sys = lock[sys_index].clone();
             futures.push(tokio::spawn(async move {
-                let lock = world.systems.storage.read();
-                let sys = &lock[sys_index];
-
-                unsafe {
-                    sys.call(&world).await;
-                }
+                sys.call(&world).await;
             }));
         }
 
