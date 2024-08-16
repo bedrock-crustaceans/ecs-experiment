@@ -1,7 +1,7 @@
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use parking_lot::RwLock;
-use std::{marker::PhantomData, sync::{atomic::{AtomicBool, AtomicUsize}, Arc}};
+use std::{future::Future, marker::PhantomData, pin::Pin, sync::{atomic::{AtomicBool, AtomicUsize}, Arc}};
 
 use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, sealed, EventState, Query, QueryParams, World};
 
@@ -12,6 +12,9 @@ pub trait System {
     /// Any systems requiring mutable access to a component must have unique access.
     unsafe fn call(&self, world: &Arc<World>);
 
+    /// This function takes a self parameter to make [`System`] object-safe.
+    fn is_async(&self) -> bool;
+
     /// Runs any preparations before a system's first run.
     /// This is for example used to register all active event readers.
     fn init(&self, world: &Arc<World>) {}
@@ -19,40 +22,46 @@ pub trait System {
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct SystemContainer<P: SystemParams, F: ParameterizedSystem<P>> {
+pub struct FnContainer<P: SystemParams, R: SystemReturnable, F: ParameterizedSystem<P, R>> {
     pub system: F,
     pub state: P::ArcState,
-    pub _marker: PhantomData<P>,
+    pub _marker: PhantomData<(P, R)>,
 }
 
 pub trait SystemParams {
     type ArcState: Send + Sync;
 
-    fn state() -> Self::ArcState;
+    fn state(world: &Arc<World>) -> Self::ArcState;
 }
 
 impl<P: SystemParam> SystemParams for P {
     type ArcState = Arc<P::State>;
 
-    fn state() -> Self::ArcState {
-        P::state()
+    fn state(world: &Arc<World>) -> Self::ArcState {
+        P::state(world)
     }
 }
 
 impl<P1: SystemParam, P2: SystemParam> SystemParams for (P1, P2) {
     type ArcState = (Arc<P1::State>, Arc<P2::State>);
 
-    fn state() -> Self::ArcState {
-        (P1::state(), P2::state())
+    fn state(world: &Arc<World>) -> Self::ArcState {
+        (P1::state(world), P2::state(world))
     }
 }
 
-impl<P0, F: ParameterizedSystem<P0>> System for SystemContainer<P0, F>
+impl<P0, R, F: ParameterizedSystem<P0, R>> System for FnContainer<P0, R, F>
 where
     P0: SystemParam,
+    R: SystemReturnable
 {
     unsafe fn call(&self, world: &Arc<World>) {
-        self.system.call(world, &self.state);
+        let _returned = self.system.call(world, &self.state);
+    }
+
+    #[inline]
+    fn is_async(&self) -> bool {
+        R::IS_ASYNC
     }
 
     fn init(&self, world: &Arc<World>) {
@@ -60,13 +69,19 @@ where
     }
 }
 
-impl<P0, P1, F: ParameterizedSystem<(P0, P1)>> System for SystemContainer<(P0, P1), F>
+impl<P0, P1, R, F: ParameterizedSystem<(P0, P1), R>> System for FnContainer<(P0, P1), R, F>
 where
     P0: SystemParam,
     P1: SystemParam,
+    R: SystemReturnable
 {
     unsafe fn call(&self, world: &Arc<World>) {
-        self.system.call(world, &self.state);
+        let _returned = self.system.call(world, &self.state);
+    }
+
+    #[inline]
+    fn is_async(&self) -> bool {
+        R::IS_ASYNC
     }
 
     fn init(&self, world: &Arc<World>) {
@@ -84,7 +99,7 @@ pub trait SystemParam {
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, state: &Arc<Self::State>) -> Self;
 
     /// Creates a new state.
-    fn state() -> Arc<Self::State>;
+    fn state(world: &Arc<World>) -> Arc<Self::State>;
     /// Initializes the parameter for first-time use.
     fn init(_world: &Arc<World>, _state: &Arc<Self::State>) {}
     /// Deinitializes the parameter for when the system is removed from the ECS.
@@ -98,7 +113,7 @@ impl SystemParam for () {
 
     fn fetch<S: sealed::Sealed>(_world: &Arc<World>, _state: &Arc<Self::State>) -> Self {}
 
-    fn state() -> Arc<Self::State> { Arc::new(()) }
+    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
 }
 
 impl<Q: QueryParams, F: FilterParams> SystemParam for Query<Q, F> {
@@ -110,7 +125,7 @@ impl<Q: QueryParams, F: FilterParams> SystemParam for Query<Q, F> {
         Query::new(world).expect("Failed to create query")
     }
 
-    fn state() -> Arc<Self::State> { Arc::new(()) }
+    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
 }
 
 impl<R: Resource> SystemParam for Res<R> {
@@ -122,7 +137,7 @@ impl<R: Resource> SystemParam for Res<R> {
         Res { locked: AtomicBool::new(false), world: Arc::clone(world), _marker: PhantomData }
     }
 
-    fn state() -> Arc<Self::State> { Arc::new(()) }
+    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
 }
 
 impl<R: Resource> SystemParam for ResMut<R> {
@@ -134,7 +149,7 @@ impl<R: Resource> SystemParam for ResMut<R> {
         ResMut { locked: AtomicBool::new(false), world: Arc::clone(world), _marker: PhantomData }
     }
 
-    fn state() -> Arc<Self::State> { Arc::new(()) }
+    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
 }
 
 impl<E: Event> SystemParam for EventWriter<E> {
@@ -146,7 +161,7 @@ impl<E: Event> SystemParam for EventWriter<E> {
         EventWriter::new(world)
     }
 
-    fn state() -> Arc<Self::State> { Arc::new(()) }
+    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
 }
 
 impl<E: Event> SystemParam for EventReader<E> {
@@ -158,9 +173,9 @@ impl<E: Event> SystemParam for EventReader<E> {
         EventReader::new(world, state)
     }
 
-    fn state() -> Arc<Self::State> {
+    fn state(world: &Arc<World>) -> Arc<Self::State> {
         Arc::new(EventState {
-            last_read: AtomicUsize::new(0),
+            last_read: AtomicUsize::new(world.events.last_assigned::<E>().map(|x| x.0).unwrap_or(0)),
             _marker: PhantomData
         })
     }
@@ -174,16 +189,32 @@ impl<E: Event> SystemParam for EventReader<E> {
     }
 }
 
-pub trait ParameterizedSystem<P: SystemParams>: Sized {
-    fn into_container(self) -> SystemContainer<P, Self> {
-        SystemContainer {
+/// Types that can be used as return values for a system.
+/// 
+/// This is useful for async systems which return futures but is also implemented for unit in the case of sync systems.
+/// In the future this could possibly also be used for returning errors or something in that direction.
+pub trait SystemReturnable {
+    const IS_ASYNC: bool;
+}
+
+impl SystemReturnable for () {
+    const IS_ASYNC: bool = false;
+}
+
+impl SystemReturnable for Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
+    const IS_ASYNC: bool = true;
+}
+
+pub trait ParameterizedSystem<P: SystemParams, R: SystemReturnable>: Sized {
+    fn into_container(self, world: &Arc<World>) -> FnContainer<P, R, Self> {
+        FnContainer {
             system: self,
-            state: P::state(),
+            state: P::state(world),
             _marker: PhantomData,
         }
     }
 
-    fn call(&self, world: &Arc<World>, state: &P::ArcState);
+    fn call(&self, world: &Arc<World>, state: &P::ArcState) -> R;
 }
 
 // impl<F> ParameterizedSystem<()> for F
@@ -195,27 +226,29 @@ pub trait ParameterizedSystem<P: SystemParams>: Sized {
 //     }
 // }
 
-impl<F, P0> ParameterizedSystem<P0> for F
+impl<F, R, P0> ParameterizedSystem<P0, R> for F
 where
-    F: Fn(P0),
+    F: Fn(P0) -> R,
     P0: SystemParam,
+    R: SystemReturnable
 {
-    fn call(&self, world: &Arc<World>, state: &Arc<P0::State>) {
+    fn call(&self, world: &Arc<World>, state: &Arc<P0::State>) -> R {
         let p0 = P0::fetch::<sealed::Sealer>(world, state);
-        self(p0);
+        self(p0)
     }
 }
 
-impl<F, P0, P1> ParameterizedSystem<(P0, P1)> for F
+impl<F, R, P0, P1> ParameterizedSystem<(P0, P1), R> for F
 where
-    F: Fn(P0, P1),
+    F: Fn(P0, P1) -> R,
     P0: SystemParam,
     P1: SystemParam,
+    R: SystemReturnable
 {
-    fn call(&self, world: &Arc<World>, state: &<(P0, P1) as SystemParams>::ArcState) {
+    fn call(&self, world: &Arc<World>, state: &<(P0, P1) as SystemParams>::ArcState) -> R {
         let p0 = P0::fetch::<sealed::Sealer>(world, &state.0);
         let p1 = P1::fetch::<sealed::Sealer>(world, &state.1);
-        self(p0, p1);
+        self(p0, p1)
     }
 }
 
@@ -232,6 +265,10 @@ impl Systems {
         // Initialise system state.
         system.init(world);
 
+        if system.is_async() {
+            println!("Pushing async system");
+        }
+        
         self.storage.write().push(system);
     }
 

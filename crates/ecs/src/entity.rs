@@ -11,12 +11,12 @@ use parking_lot::{RwLock, RwLockReadGuard};
 pub struct EntityId(pub(crate) usize);
 
 #[derive(Clone)]
-pub struct Entity<'w> {
-    pub(crate) world: &'w World,
+pub struct Entity {
+    pub(crate) world: Arc<World>,
     pub(crate) id: EntityId,
 }
 
-impl<'w> Entity<'w> {
+impl Entity {
     pub fn id(&self) -> EntityId {
         self.id
     }
@@ -93,10 +93,10 @@ impl Entities {
         }
     }
 
-    pub fn iter<'a, F: FilterParams>(&'a self, world: &'a Arc<World>) -> EntityIter<'a, F> {
+    pub fn iter<'a, F: FilterParams>(&'a self, world: &Arc<World>) -> EntityIter<'a, F> {
         let entities = self.indices.read();
         EntityIter {
-            world, entities, iter_index: 0, _marker: PhantomData
+            world: Arc::clone(world), entities, iter_index: 0, _marker: PhantomData
         }
     }
 }
@@ -105,7 +105,7 @@ pub(crate) struct EntityIter<'w, F>
 where
     F: FilterParams
 {
-    pub world: &'w World,
+    pub world: Arc<World>,
     pub entities: RwLockReadGuard<'w, BitVec>,
     pub iter_index: usize,
     pub _marker: PhantomData<&'w F>
@@ -115,7 +115,7 @@ impl<'w, F> Iterator for EntityIter<'w, F>
 where
     F: FilterParams
 {
-    type Item = Entity<'w>;
+    type Item = Entity;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Use a loop rather than recursion for cache reasons.

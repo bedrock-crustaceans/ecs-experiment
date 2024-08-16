@@ -1,9 +1,11 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use ecs_derive::Component;
 use parking_lot::RwLock;
 
 use crate::entity::Entity;
-use crate::{Component, EntityId, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, Without, World};
+use crate::{Component, EntityId, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, SystemParam, Without, World};
 use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
@@ -14,30 +16,37 @@ fn detection(
 ) {
     for (entity, health) in &query {
         if health.0 <= 0.0 {
-            writer.write(Killed { entity: entity.id() });
+            writer.write(Killed { entity });
         }
     }
 }
 
-fn execution(mut reader: EventReader<Killed>) {
+fn execution(mut reader: EventReader<Killed>, mut counter: ResMut<KillCounter>) {
     for event in reader.read() {
-        println!("Killing entity {:?}", event.entity);
+        counter.0 += 1;       
+        println!("Entity {:?} has been killed. {} entities killed so far", event.entity.id(), counter.0);
     }
 }
 
-fn counter(mut counter: ResMut<Counter>) {
-    println!("{:?}", *counter);
-    counter.0 += 1;
+async fn async_system(query: Query<Entity, With<Immortal>>) {
+    for entity in &query {
+        println!("Entity {:?}", entity.id());
+    }
 }
 
-fn counter2(counter: Res<Counter>) {
-    println!("Counter: {}", counter.0);
+fn boxer1<P, S, Fut>(fun: S) -> impl Fn(P) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>
+where
+    P: SystemParam,
+    S: Fn(P) -> Fut + 'static,
+    Fut: Future<Output = ()> + Send + Sync + 'static,
+{
+    move |p0| Box::pin(fun(p0))
 }
 
 #[derive(Debug)]
-struct Counter(u32);
+struct KillCounter(u32);
 
-impl Resource for Counter {}
+impl Resource for KillCounter {}
 
 #[derive(Debug, Component)]
 struct Immortal;
@@ -47,7 +56,7 @@ struct Health(f32);
 
 #[derive(Clone)]
 struct Killed {
-    entity: EntityId
+    entity: Entity
 }
 
 impl Event for Killed {}
@@ -58,14 +67,16 @@ async fn test() {
 
     world.spawn(Health(0.0));
     world.spawn(Health(1.0));
+    world.spawn(Health(0.0));
     world.spawn((Health(0.0), Immortal));
 
-    world.add_resource(Counter(0));
+    world.add_resource(KillCounter(0));
 
+    let pinned = boxer1(async_system);
+
+    world.add_system(pinned);
     world.add_system(detection);
     world.add_system(execution);
-    world.add_system(counter);
-    world.add_system(counter2);
 
     world.tick().await;
 }

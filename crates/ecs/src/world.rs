@@ -1,6 +1,6 @@
 use crate::component::{Components, SpawnBundle};
 use crate::entity::{Entities, Entity};
-use crate::{Events, ParameterizedSystem, Resource, Resources, System, SystemContainer, SystemParams, Systems};
+use crate::{Events, ParameterizedSystem, Resource, Resources, System, FnContainer, SystemParams, SystemReturnable, Systems};
 use std::sync::Arc;
 use crate::scheduler::Scheduler;
 
@@ -19,12 +19,12 @@ impl World {
         Arc::new(World::default())
     }
 
-    pub fn spawn<B: SpawnBundle>(&self, bundle: B) -> Entity {
+    pub fn spawn<B: SpawnBundle>(self: &Arc<Self>, bundle: B) -> Entity {
         let entity = self.entities.alloc();
         bundle.insert_into(&self.components, entity);
 
         Entity {
-            world: self,
+            world: Arc::clone(self),
             id: entity,
         }
     }
@@ -38,15 +38,27 @@ impl World {
         self.resources.insert(resource)
     }
 
-    pub fn add_system<P, S>(self: &Arc<Self>, system: S)
+    pub fn add_system<P, R, S>(self: &Arc<Self>, system: S)
     where
         P: SystemParams + Send + Sync + 'static,
-        S: ParameterizedSystem<P> + Send + Sync + 'static,
-        SystemContainer<P, S>: System,
+        R: SystemReturnable + Send + Sync + 'static,
+        S: ParameterizedSystem<P, R> + Send + Sync + 'static,
+        FnContainer<P, R, S>: System,
     {
-        let wrapped = Arc::new(system.into_container());
+        let wrapped = Arc::new(system.into_container(self));
         self.systems.push(self, wrapped);
     }
+
+    // pub fn async_system<P, R, S, F>(self: &Arc<Self>, system: S)
+    // where
+    //     P: SystemParams + Send + Sync + 'static,
+    //     R: SystemReturnable + Send + Sync + 'static,
+    //     S: ParameterizedSystem<P, R> + Send + Sync + 'static,
+    //     AsyncContainer<P, R, S>: System,
+    // {
+    //     let wrapped = AsyncContainer::new(self);
+    //     self.systems.push(self, wrapped);
+    // }
 
     pub async fn tick(self: &Arc<Self>) {
         self.scheduler.pre_tick(self);

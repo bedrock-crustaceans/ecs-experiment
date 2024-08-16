@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use crate::{World};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct EventId(usize);
+pub struct EventId(pub(crate) usize);
 
 struct EventSlot<E: Event> {
     /// Remaining readers that have not seen this event yet.
@@ -67,8 +67,6 @@ impl Events {
                     .as_any()
                     .downcast_ref()
                     .expect("EventTable type ID does not match event type ID");
-
-                println!("Inserting event");
 
                 table.insert(event)
             },
@@ -132,8 +130,6 @@ impl Events {
                 self.storage.insert(TypeId::of::<E>(), Box::new(table));
             }
         }
-
-        println!("Subscribed reader");
     }
 
     /// Unregisters a reader from the specified event bus.
