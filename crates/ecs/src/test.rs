@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 use ecs_derive::Component;
 use parking_lot::RwLock;
 
@@ -28,20 +29,28 @@ fn execution(mut reader: EventReader<Killed>, mut counter: ResMut<KillCounter>) 
     }
 }
 
-async fn async_system(query: Query<Entity, With<Immortal>>) {
-    for entity in &query {
-        println!("IMMORTAL {:?}", entity.id());
+fn reader(mut reader: EventReader<Interval>, counter: Res<KillCounter>) {
+    for _ in reader.read() {
+        println!("{} entities have been killed so far", counter.0);
     }
 }
 
-fn boxer1<P, S, Fut>(fun: S) -> impl Fn(P) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>
-where
-    P: SystemParam,
-    S: Fn(P) -> Fut + 'static,
-    Fut: Future<Output = ()> + Send + Sync + 'static,
-{
-    move |p0| Box::pin(fun(p0))
+fn interval_system(query: Query<&mut LastUpdate>, mut writer: EventWriter<Interval>) {
+    let update = query.into_iter().next().unwrap();
+
+    if Instant::now().duration_since(update.instant) > Duration::from_millis(1000) {
+        update.instant = Instant::now();
+        writer.write(Interval);
+    }
 }
+
+#[derive(Debug, Component)]
+struct LastUpdate { instant: Instant }
+
+#[derive(Debug, Copy, Clone)]
+struct Interval;
+
+impl Event for Interval {}
 
 #[derive(Debug)]
 struct KillCounter(u32);
@@ -61,22 +70,42 @@ struct Killed {
 
 impl Event for Killed {}
 
+fn boxer1<P, S, Fut>(fun: S) -> impl Fn(P) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>
+where
+    P: SystemParam,
+    S: Fn(P) -> Fut + 'static,
+    Fut: Future<Output = ()> + Send + Sync + 'static,
+{
+    move |p0| Box::pin(fun(p0))
+}
+
 #[tokio::test]
 async fn test() {
     let world = World::new();
+
+    // let pinned = boxer1(interval_system);
+    // world.add_system(pinned);
 
     world.spawn(Health(0.0));
     world.spawn(Health(1.0));
     world.spawn(Health(0.0));
     world.spawn((Health(0.0), Immortal));
 
+    world.spawn(LastUpdate { instant: Instant::now() });
+
+    world.add_system(interval_system);
+    world.add_system(reader);
+
     world.add_resource(KillCounter(0));
 
-    let pinned = boxer1(async_system);
+    // world.add_system(detection);
+    // world.add_system(execution);
 
-    world.add_system(pinned);
-    world.add_system(detection);
-    world.add_system(execution);
 
     world.tick().await;
+    // let mut interval = tokio::time::interval(Duration::from_millis(50));
+    // loop {
+    //     world.tick().await;
+    //     interval.tick().await;        
+    // }
 }

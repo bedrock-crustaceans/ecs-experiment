@@ -564,7 +564,11 @@ pub trait QueryParams {
     const MUTABLE: bool;
 
     fn fetch<'w>(world: &'w World, entity: Entity) -> Option<Self::Fetchable<'w>>;
+    /// Ensures that the entity has the requested components.
+    fn filter(entity: &Entity) -> bool;
+    /// Acquires the locks on the requested component storages.
     fn acquire_locks(world: &World) -> EcsResult<()>;
+    /// Releases all previously acquired locks.
     fn release_locks(world: &World);
 }
 
@@ -575,6 +579,11 @@ impl QueryParams for Entity {
 
     fn fetch<'w>(_world: &'w World, entity: Entity) -> Option<Self::Fetchable<'w>> {
         Some(entity)
+    }
+
+    /// An entity query param needs no filtering as every entity can obviously produce an `Entity` type.
+    fn filter(_entity: &Entity) -> bool {
+        true
     }
 
     fn acquire_locks(_world: &World) -> EcsResult<()> { Ok(()) /* Entities require no locks */ }
@@ -613,6 +622,10 @@ impl<T: Component> QueryParams for &T {
         };
 
         Some(cast)
+    }
+
+    fn filter(entity: &Entity) -> bool {
+        entity.has::<T>()
     }
 
     fn release_locks(world: &World) {
@@ -658,6 +671,7 @@ impl<T: Component> QueryParams for &mut T {
         // The scheduler will take care of aliasing issues as it will not schedule mutable queries at the same time as aliased ones.
 
         let type_id = TypeId::of::<T>();
+
         let typeless = world.components.map.get(&type_id)?;
         let typed: &TypedStorage<T> = typeless
             .value()
@@ -665,7 +679,9 @@ impl<T: Component> QueryParams for &mut T {
             .downcast_ref()
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
+
         let storage_index = *typed.map.get(&entity.id())?.value();
+
         let mut lock = typed.storage.write();
         let component = lock.get_mut(storage_index)?;
 
@@ -678,6 +694,10 @@ impl<T: Component> QueryParams for &mut T {
         };
 
         Some(cast)
+    }
+
+    fn filter(entity: &Entity) -> bool {
+        entity.has::<T>()
     }
 
     fn acquire_locks(world: &World) -> EcsResult<()> {
@@ -721,6 +741,10 @@ impl<Q1: QueryParams, Q2: QueryParams> QueryParams for (Q1, Q2) {
         let q2 = Q2::fetch(world, entity)?;
 
         Some((q1, q2))
+    }
+
+    fn filter(entity: &Entity) -> bool {
+        Q1::filter(entity) && Q2::filter(entity)
     }
 
     fn acquire_locks(world: &World) -> EcsResult<()> {
@@ -783,7 +807,7 @@ impl<'query, Q: QueryParams, F: FilterParams> IntoIterator for &'query Query<Q, 
 
 pub struct QueryIter<'query, Q: QueryParams, F: FilterParams> {
     query: &'query Query<Q, F>,
-    entities: EntityIter<'query, F>
+    entities: EntityIter<'query, Q, F>
 }
 
 impl<'query, Q: QueryParams, F: FilterParams> Iterator for QueryIter<'query, Q, F> {

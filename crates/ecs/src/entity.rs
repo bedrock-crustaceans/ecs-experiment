@@ -1,4 +1,4 @@
-use crate::{filter::FilterParams, Component, World};
+use crate::{filter::FilterParams, Component, QueryParams, World};
 use std::any::TypeId;
 use std::fmt::Debug;
 use std::iter::FusedIterator;
@@ -93,7 +93,11 @@ impl Entities {
         }
     }
 
-    pub fn iter<'a, F: FilterParams>(&'a self, world: &Arc<World>) -> EntityIter<'a, F> {
+    pub fn iter<'a, Q, F>(&'a self, world: &Arc<World>) -> EntityIter<'a, Q, F> 
+    where
+        Q: QueryParams,
+        F: FilterParams
+    {
         let entities = self.indices.read();
         EntityIter {
             world: Arc::clone(world), entities, iter_index: 0, _marker: PhantomData
@@ -101,18 +105,20 @@ impl Entities {
     }
 }
 
-pub(crate) struct EntityIter<'w, F>
+pub(crate) struct EntityIter<'w, Q, F>
 where
+    Q: QueryParams,
     F: FilterParams
 {
     pub world: Arc<World>,
     pub entities: RwLockReadGuard<'w, BitVec>,
     pub iter_index: usize,
-    pub _marker: PhantomData<&'w F>
+    pub _marker: PhantomData<&'w (Q, F)>
 }
 
-impl<'w, F> Iterator for EntityIter<'w, F>
+impl<'w, Q, F> Iterator for EntityIter<'w, Q, F>
 where
+    Q: QueryParams,
     F: FilterParams
 {
     type Item = Entity;
@@ -130,11 +136,11 @@ where
                 id: EntityId(next_id)
             };
 
-            if F::filter(&entity) {
+            if Q::filter(&entity) && F::filter(&entity) {
                 break Some(entity)
             }
         }
     }
 }
 
-impl<F: FilterParams> FusedIterator for EntityIter<'_, F> {}
+impl<Q: QueryParams, F: FilterParams> FusedIterator for EntityIter<'_, Q, F> {}
