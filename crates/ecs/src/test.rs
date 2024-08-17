@@ -6,7 +6,7 @@ use ecs_derive::Component;
 use parking_lot::RwLock;
 
 use crate::entity::Entity;
-use crate::{Component, EntityId, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, SystemParam, Without, World};
+use crate::{Component, EntityId, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, State, SystemParam, Without, World};
 use crate::filter::With;
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
@@ -45,6 +45,14 @@ fn interval_system(query: Query<&mut LastUpdate>, mut writer: EventWriter<Interv
         update.instant = Instant::now();
         writer.write(Interval);
     }
+}
+
+struct SystemState {
+    counter: usize
+}
+
+fn state_system(mut state: State<SystemState>) {
+    state.counter += 1;
 }
 
 #[derive(Debug, Component)]

@@ -129,7 +129,7 @@ where
 pub trait SystemParam {
     type State: Send + Sync;
 
-    const MUTABLE: bool;
+    const EXCLUSIVE: bool;
 
     #[doc(hidden)]
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, state: &Arc<Self::State>) -> Self;
@@ -145,84 +145,11 @@ pub trait SystemParam {
 impl SystemParam for () {
     type State = ();
 
-    const MUTABLE: bool = false;
+    const EXCLUSIVE: bool = false;
 
     fn fetch<S: sealed::Sealed>(_world: &Arc<World>, _state: &Arc<Self::State>) -> Self {}
 
     fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
-}
-
-impl<Q: QueryParams, F: FilterParams> SystemParam for Query<Q, F> {
-    type State = ();
-
-    const MUTABLE: bool = Q::MUTABLE;
-
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
-        Query::new(world).expect("Failed to create query")
-    }
-
-    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
-}
-
-impl<R: Resource> SystemParam for Res<R> {
-    type State = ();
-
-    const MUTABLE: bool = false;
-
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
-        Res { locked: AtomicBool::new(false), world: Arc::clone(world), _marker: PhantomData }
-    }
-
-    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
-}
-
-impl<R: Resource> SystemParam for ResMut<R> {
-    type State = ();
-
-    const MUTABLE: bool = true;
-
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
-        ResMut { locked: AtomicBool::new(false), world: Arc::clone(world), _marker: PhantomData }
-    }
-
-    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
-}
-
-impl<E: Event> SystemParam for EventWriter<E> {
-    type State = ();
-
-    const MUTABLE: bool = false;
-
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
-        EventWriter::new(world)
-    }
-
-    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
-}
-
-impl<E: Event> SystemParam for EventReader<E> {
-    type State = EventState<E>;
-
-    const MUTABLE: bool = false;
-
-    fn fetch<S: sealed::Sealed>(world: &Arc<World>, state: &Arc<Self::State>) -> Self {
-        EventReader::new(world, state)
-    }
-
-    fn state(world: &Arc<World>) -> Arc<Self::State> {
-        Arc::new(EventState {
-            last_read: AtomicUsize::new(world.events.next_id::<E>().map(|x| x.0).unwrap_or(0)),
-            _marker: PhantomData
-        })
-    }
-
-    fn init(world: &Arc<World>, _state: &Arc<Self::State>) {
-        world.events.add_reader::<E>();
-    }
-
-    fn destroy(world: &Arc<World>, _state: &Arc<Self::State>) {
-        world.events.remove_reader::<E>();
-    }
 }
 
 /// Types that can be used as return values for a system.

@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use nohash_hasher::{BuildNoHashHasher, NoHashHasher};
 use parking_lot::RwLock;
 
-use crate::{World};
+use crate::{sealed, SystemParam, World};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct EventId(pub(crate) usize);
@@ -167,6 +167,18 @@ impl<E: Event> EventWriter<E> {
     }
 }
 
+impl<E: Event> SystemParam for EventWriter<E> {
+    type State = ();
+
+    const EXCLUSIVE: bool = false;
+
+    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
+        EventWriter::new(world)
+    }
+
+    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
+}
+
 pub struct EventReader<E: Event> {
     world: Arc<World>,
     state: Arc<EventState<E>>,
@@ -196,6 +208,31 @@ impl<E: Event> EventReader<E> {
 
     pub fn par_read(&mut self) -> EventParIterator<E> {
         todo!()
+    }
+}
+
+impl<E: Event> SystemParam for EventReader<E> {
+    type State = EventState<E>;
+
+    const EXCLUSIVE: bool = false;
+
+    fn fetch<S: sealed::Sealed>(world: &Arc<World>, state: &Arc<Self::State>) -> Self {
+        EventReader::new(world, state)
+    }
+
+    fn state(world: &Arc<World>) -> Arc<Self::State> {
+        Arc::new(EventState {
+            last_read: AtomicUsize::new(world.events.next_id::<E>().map(|x| x.0).unwrap_or(0)),
+            _marker: PhantomData
+        })
+    }
+
+    fn init(world: &Arc<World>, _state: &Arc<Self::State>) {
+        world.events.add_reader::<E>();
+    }
+
+    fn destroy(world: &Arc<World>, _state: &Arc<Self::State>) {
+        world.events.remove_reader::<E>();
     }
 }
 

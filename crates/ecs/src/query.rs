@@ -556,7 +556,7 @@
 
 use std::{any::TypeId, marker::PhantomData, sync::{atomic::Ordering, Arc}};
 
-use crate::{Component, EcsError, EcsResult, Entity, EntityIter, FilterParams, TypedStorage, World};
+use crate::{sealed, Component, EcsError, EcsResult, Entity, EntityIter, FilterParams, SystemParam, TypedStorage, World};
 
 pub trait QueryParams {
     type Fetchable<'query>;
@@ -786,6 +786,18 @@ impl<Q: QueryParams, F: FilterParams> Query<Q, F> {
 
         Ok(Self { world: Arc::clone(world), _marker: PhantomData })
     }
+}
+
+impl<Q: QueryParams, F: FilterParams> SystemParam for Query<Q, F> {
+    type State = ();
+
+    const EXCLUSIVE: bool = Q::MUTABLE;
+
+    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
+        Query::new(world).expect("Failed to create query")
+    }
+
+    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
 }
 
 impl<Q: QueryParams, F: FilterParams> Drop for Query<Q, F> {

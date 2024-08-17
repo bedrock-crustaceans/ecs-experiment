@@ -2,7 +2,7 @@ use std::{any::{Any, TypeId}, cell::UnsafeCell, marker::PhantomData, ops::{Deref
 
 use dashmap::DashMap;
 
-use crate::{EcsError, EcsResult, LockMarker, World};
+use crate::{sealed, EcsError, EcsResult, LockMarker, SystemParam, World};
 
 struct ResourceSingleton<R: Resource> {
     lock_marker: LockMarker,
@@ -130,6 +130,18 @@ pub struct Res<R: Resource> {
     pub(crate) _marker: PhantomData<R>
 }
 
+impl<R: Resource> SystemParam for Res<R> {
+    type State = ();
+
+    const EXCLUSIVE: bool = false;
+
+    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
+        Res { locked: AtomicBool::new(false), world: Arc::clone(world), _marker: PhantomData }
+    }
+
+    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
+}
+
 impl<R: Resource> Deref for Res<R> {
     type Target = R;
 
@@ -158,6 +170,18 @@ pub struct ResMut<R: Resource> {
     pub(crate) locked: AtomicBool,
     pub(crate) world: Arc<World>,
     pub(crate) _marker: PhantomData<R>
+}
+
+impl<R: Resource> SystemParam for ResMut<R> {
+    type State = ();
+
+    const EXCLUSIVE: bool = true;
+
+    fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
+        ResMut { locked: AtomicBool::new(false), world: Arc::clone(world), _marker: PhantomData }
+    }
+
+    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
 }
 
 impl<R: Resource> Deref for ResMut<R> {
