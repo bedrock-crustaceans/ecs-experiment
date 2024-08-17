@@ -47,12 +47,14 @@ fn interval_system(query: Query<&mut LastUpdate>, mut writer: EventWriter<Interv
     }
 }
 
+#[derive(Default)]
 struct SystemState {
     counter: usize
 }
 
 fn state_system(mut state: State<SystemState>) {
     state.counter += 1;
+    println!("Counter is: {}", state.counter);
 }
 
 #[derive(Debug, Component)]
@@ -112,8 +114,10 @@ async fn test() {
     world.add_system(detection);
     world.add_system(execution);
 
+    world.add_system(state_system);
+
     let mut interval = tokio::time::interval(Duration::from_millis(50));
-    loop {
+    for _ in 0..2 {
         world.tick().await;
         interval.tick().await;        
     }

@@ -1,23 +1,30 @@
-use std::{marker::PhantomData, ops::{Deref, DerefMut}, sync::Arc};
+use std::{cell::UnsafeCell, marker::PhantomData, ops::{Deref, DerefMut}, sync::Arc};
+
+use parking_lot::RwLock;
 
 use crate::{sealed, SystemParam, World};
 
+pub struct StateHolder<S: Send + Sync + Default>(UnsafeCell<S>);
+
+unsafe impl<S: Send + Sync + Default> Send for StateHolder<S> {}
+unsafe impl<S: Send + Sync + Default> Sync for StateHolder<S> {}
+
 pub struct State<S: Send + Sync + Default> {   
-    state: Arc<S>,
+    state: Arc<StateHolder<S>>,
     _marker: PhantomData<S>
 }
 
 impl<S: Send + Sync + Default> SystemParam for State<S> {
-    type State = S;
+    type State = StateHolder<S>;
 
-    const EXCLUSIVE: bool = false;
+    const EXCLUSIVE: bool = true;
 
-    fn fetch<T: sealed::Sealed>(world: &Arc<World>, state: &Arc<Self::State>) -> Self {
-        State { state, _marker: PhantomData }
+    fn fetch<T: sealed::Sealed>(_world: &Arc<World>, state: &Arc<Self::State>) -> Self {
+        State { state: Arc::clone(state), _marker: PhantomData }
     }
-    
+
     fn state(_world: &Arc<crate::World>) -> Arc<Self::State> {
-        Arc::new(S::default())
+        Arc::new(StateHolder(UnsafeCell::new(S::default())))
     }
 }
 
@@ -25,12 +32,14 @@ impl<S: Send + Sync + Default> Deref for State<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
-        &self.state
+        // SAFETY: A state is unique to each system and therefore can only be referenced by that singular system.
+        unsafe { &*self.state.0.get() }
     }
 }
 
 impl<S: Send + Sync + Default> DerefMut for State<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.state
+        // SAFETY: A state is unique to each system and therefore can only be referenced by that singular system.
+        unsafe { &mut *self.state.0.get() }
     }
 }
