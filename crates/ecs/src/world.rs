@@ -21,7 +21,6 @@ impl World {
 
     pub fn spawn<B: SpawnBundle>(self: &Arc<Self>, bundle: B) -> Entity {
         let entity = self.entities.alloc();
-        println!("{entity:?}");
         bundle.insert_into(&self.components, entity);
 
         Entity {

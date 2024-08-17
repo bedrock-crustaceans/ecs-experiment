@@ -26,10 +26,13 @@ fn execution(mut reader: EventReader<Killed>, mut counter: ResMut<KillCounter>) 
     for event in reader.read() {
         counter.0 += 1;       
         println!("Entity {:?} has been killed. {} entities killed so far", event.entity.id(), counter.0);
+        event.entity.despawn();
     }
 }
 
 fn reader(mut reader: EventReader<Interval>, counter: Res<KillCounter>) {
+    println!("Events: {}", reader.len());
+
     for _ in reader.read() {
         println!("{} entities have been killed so far", counter.0);
     }
@@ -98,14 +101,12 @@ async fn test() {
 
     world.add_resource(KillCounter(0));
 
-    // world.add_system(detection);
-    // world.add_system(execution);
+    world.add_system(detection);
+    world.add_system(execution);
 
-
-    world.tick().await;
-    // let mut interval = tokio::time::interval(Duration::from_millis(50));
-    // loop {
-    //     world.tick().await;
-    //     interval.tick().await;        
-    // }
+    let mut interval = tokio::time::interval(Duration::from_millis(50));
+    loop {
+        world.tick().await;
+        interval.tick().await;        
+    }
 }

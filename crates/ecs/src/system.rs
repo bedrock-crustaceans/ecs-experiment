@@ -211,7 +211,7 @@ impl<E: Event> SystemParam for EventReader<E> {
 
     fn state(world: &Arc<World>) -> Arc<Self::State> {
         Arc::new(EventState {
-            last_read: AtomicUsize::new(world.events.last_assigned::<E>().map(|x| x.0).unwrap_or(0)),
+            last_read: AtomicUsize::new(world.events.next_id::<E>().map(|x| x.0).unwrap_or(0)),
             _marker: PhantomData
         })
     }

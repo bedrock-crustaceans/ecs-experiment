@@ -31,6 +31,7 @@ struct EventBus<E: Event> {
 impl<E: Event> EventBus<E> {
     pub fn insert(&self, event: E) -> EventId {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        println!("next id: {id}");
         self.events.insert(id, EventSlot {
             event, rem: AtomicUsize::new(self.readers.load(Ordering::SeqCst))
         });
@@ -142,11 +143,11 @@ impl Events {
         table.readers.fetch_sub(1, Ordering::SeqCst);
     }
 
-    pub fn last_assigned<E: Event>(&self) -> Option<EventId> {
+    pub fn next_id<E: Event>(&self) -> Option<EventId> {
         let table = self.storage.get_mut(&TypeId::of::<E>())?;
         let table: &EventBus<E> = table.as_any().downcast_ref()?;
 
-        Some(EventId(table.next_id.load(Ordering::SeqCst) - 1))
+        Some(EventId(table.next_id.load(Ordering::SeqCst)))
     }
 }
 
@@ -179,8 +180,8 @@ impl<E: Event> EventReader<E> {
 
     /// The amount of unread events remaining in this reader.
     pub fn len(&self) -> usize {
-        let last_assigned = self.world.events.last_assigned::<E>().map(|x| x.0).unwrap_or(0);
-        last_assigned - self.state.last_read.load(Ordering::SeqCst)
+        let next_id = self.world.events.next_id::<E>().map(|x| x.0).unwrap_or(0);
+        next_id - self.state.last_read.load(Ordering::SeqCst)
     }
 
     /// Whether this reader has any unread events available.
@@ -206,8 +207,13 @@ impl<'reader, E: Event> Iterator for EventIterator<'reader, E> {
     type Item = E;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let index = self.reader.state.last_read.fetch_add(1, Ordering::SeqCst);
-        self.reader.world.events.get(index)
+        let index = self.reader.state.last_read.load(Ordering::SeqCst);
+        let item = self.reader.world.events.get(index);
+        if item.is_some() {
+            self.reader.state.last_read.fetch_add(1, Ordering::SeqCst);
+        }
+
+        item
     }
 }
 
