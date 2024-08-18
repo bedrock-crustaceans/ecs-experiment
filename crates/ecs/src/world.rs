@@ -4,7 +4,7 @@ use crate::{AsyncSystem, Events, FnContainer, ParameterizedSystem, PinnedFut, Re
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use crate::scheduler::Scheduler;
+use crate::scheduler::{MultiThreadedExecutor, Schedule, Scheduler, SingleThreadedExecutor};
 
 #[derive(Default)]
 pub struct World {
@@ -31,6 +31,14 @@ impl World {
         }
     }
 
+    pub fn schedule_single_threaded(self: &Arc<Self>) -> Schedule<SingleThreadedExecutor> {
+        Schedule::new(self)
+    }
+
+    pub fn schedule_multi_threaded(self: &Arc<Self>) -> Schedule<MultiThreadedExecutor> {
+        Schedule::new(self)
+    }
+
     #[inline]
     pub fn spawn_empty(self: &Arc<Self>) -> Entity {
         self.spawn(())
@@ -40,25 +48,25 @@ impl World {
         self.resources.insert(resource)
     }
 
-    pub fn add_system<P, R, S>(self: &Arc<Self>, system: S)
-    where
-        P: SystemParams + Send + Sync + 'static,
-        R: SystemReturnable + Send + Sync + 'static,
-        S: ParameterizedSystem<P, R> + Send + Sync + 'static,
-        FnContainer<P, R, S>: System,
-    {
-        let contained = Arc::new(system.into_container(self));
-        self.systems.push(self, contained);
-    }
+    // pub fn add_system<P, R, S>(self: &Arc<Self>, system: S)
+    // where
+    //     P: SystemParams + Send + Sync + 'static,
+    //     R: SystemReturnable + Send + Sync + 'static,
+    //     S: ParameterizedSystem<P, R> + Send + Sync + 'static,
+    //     FnContainer<P, R, S>: System,
+    // {
+    //     let contained = Arc::new(system.into_container(self));
+    //     self.systems.push(self, contained);
+    // }
 
-    pub fn add_async_system<P, S>(self: &Arc<Self>, system: S)
-    where
-        P: SystemParams + Send + Sync + 'static,
-        S: AsyncSystem<P>
-    {
-        let contained = Arc::new(system.pinned(self));
-        self.systems.push(self, contained);
-    }
+    // pub fn add_async_system<P, S>(self: &Arc<Self>, system: S)
+    // where
+    //     P: SystemParams + Send + Sync + 'static,
+    //     S: AsyncSystem<P>
+    // {
+    //     let contained = Arc::new(system.pinned(self));
+    //     self.systems.push(self, contained);
+    // }
 
     // pub fn async_system<P, R, S, F>(self: &Arc<Self>, system: S)
     // where

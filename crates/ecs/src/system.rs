@@ -3,9 +3,11 @@ use futures::StreamExt;
 use parking_lot::RwLock;
 use std::{any::TypeId, future::Future, marker::PhantomData, pin::Pin, sync::{atomic::{AtomicBool, AtomicUsize}, Arc}};
 
-use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, sealed, EventState, Query, QueryParams, World};
+use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, scheduler::{SystemDescriptor, SystemId, SystemParamDescriptor}, sealed, EventState, Query, QueryParams, World};
 
 pub unsafe trait System {
+    fn descriptor(&self) -> SystemDescriptor;
+
     /// # Safety
     /// 
     /// Before running a system you must ensure that the Rust reference aliasing guarantees are upheld.
@@ -27,6 +29,7 @@ pub unsafe trait System {
 
 /// Wrapper around a system function pointer to be able to store the function's params.
 pub struct FnContainer<P: SystemParams, R: SystemReturnable, F: ParameterizedSystem<P, R>> {
+    pub id: usize,
     pub system: F,
     pub state: P::ArcState,
     pub _marker: PhantomData<(P, R)>,
@@ -59,6 +62,13 @@ where
     P0: SystemParam,
     R: SystemReturnable
 {
+    fn descriptor(&self) -> SystemDescriptor {
+        SystemDescriptor {
+            id: self.id,
+            deps: vec![P0::descriptor()]
+        }
+    }
+
     fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
         let returned = self.system.call(world, &self.state);
         if self.is_async() {   
@@ -95,6 +105,13 @@ where
     P1: SystemParam,
     R: SystemReturnable
 {
+    fn descriptor(&self) -> SystemDescriptor {
+        SystemDescriptor {
+            id: self.id,
+            deps: vec![P0::descriptor(), P1::descriptor()]
+        }
+    }
+
     fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
         let returned = self.system.call(world, &self.state);
         if self.is_async() {   
@@ -129,7 +146,7 @@ where
 pub trait SystemParam {
     type State: Send + Sync;
 
-    const EXCLUSIVE: bool;
+    fn descriptor() -> SystemParamDescriptor;
 
     #[doc(hidden)]
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, state: &Arc<Self::State>) -> Self;
@@ -145,7 +162,9 @@ pub trait SystemParam {
 impl SystemParam for () {
     type State = ();
 
-    const EXCLUSIVE: bool = false;
+    fn descriptor() -> SystemParamDescriptor {
+        SystemParamDescriptor::Unit
+    }
 
     fn fetch<S: sealed::Sealed>(_world: &Arc<World>, _state: &Arc<Self::State>) -> Self {}
 
@@ -154,8 +173,10 @@ impl SystemParam for () {
 
 pub type PinnedFut = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
 
+/// Implemented by async systems to put them into storage containers.
 pub trait AsyncSystem<P> where P: SystemParams {
-    fn pinned(self, world: &Arc<World>) -> impl System + Send + Sync + 'static;
+    /// Pins the returned future and puts the system into a container.
+    fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static;
 }
 
 impl<P, F, Fut> AsyncSystem<P> for F 
@@ -164,12 +185,12 @@ where
     Fut: Future<Output = ()> + Send + Sync + 'static, 
     P: SystemParam + Send + Sync + 'static
 {
-    fn pinned(self, world: &Arc<World>) -> impl System + Send + Sync + 'static {
+    fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static {
         let pinned = move |p1| -> PinnedFut { 
             Box::pin(self(p1))
         };
 
-        pinned.into_container(world)
+        pinned.into_container(id, world)
     }
 }
 
@@ -180,12 +201,12 @@ where
     P1: SystemParam + Send + Sync + 'static,
     P2: SystemParam + Send + Sync + 'static
 {
-    fn pinned(self, world: &Arc<World>) -> impl System + Send + Sync + 'static {
+    fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static {
         let pinned = move |p1, p2| -> PinnedFut {
             Box::pin(self(p1, p2))
         };
 
-        pinned.into_container(world)
+        pinned.into_container(id, world)
     }
 }
 
@@ -206,8 +227,9 @@ impl SystemReturnable for Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
 }
 
 pub trait ParameterizedSystem<P: SystemParams, R: SystemReturnable>: Sized {
-    fn into_container(self, world: &Arc<World>) -> FnContainer<P, R, Self> {
+    fn into_container(self, id: usize, world: &Arc<World>) -> FnContainer<P, R, Self> {
         FnContainer {
+            id,
             system: self,
             state: P::state(world),
             _marker: PhantomData,

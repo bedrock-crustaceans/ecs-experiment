@@ -2,7 +2,7 @@ use std::{any::{Any, TypeId}, cell::UnsafeCell, marker::PhantomData, ops::{Deref
 
 use dashmap::DashMap;
 
-use crate::{sealed, EcsError, EcsResult, LockMarker, SystemParam, World};
+use crate::{scheduler::SystemParamDescriptor, sealed, EcsError, EcsResult, LockMarker, SystemParam, World};
 
 struct ResourceSingleton<R: Resource> {
     lock_marker: LockMarker,
@@ -133,7 +133,9 @@ pub struct Res<R: Resource> {
 impl<R: Resource> SystemParam for Res<R> {
     type State = ();
 
-    const EXCLUSIVE: bool = false;
+    fn descriptor() -> SystemParamDescriptor {
+        SystemParamDescriptor::Res(TypeId::of::<R>())
+    }
 
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
         Res { locked: AtomicBool::new(false), world: Arc::clone(world), _marker: PhantomData }
@@ -175,7 +177,9 @@ pub struct ResMut<R: Resource> {
 impl<R: Resource> SystemParam for ResMut<R> {
     type State = ();
 
-    const EXCLUSIVE: bool = true;
+    fn descriptor() -> SystemParamDescriptor {
+        SystemParamDescriptor::ResMut(TypeId::of::<R>())
+    }
 
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
         ResMut { locked: AtomicBool::new(false), world: Arc::clone(world), _marker: PhantomData }

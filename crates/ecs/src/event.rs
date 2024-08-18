@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use nohash_hasher::{BuildNoHashHasher, NoHashHasher};
 use parking_lot::RwLock;
 
-use crate::{sealed, SystemParam, World};
+use crate::{scheduler::SystemParamDescriptor, sealed, SystemParam, World};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct EventId(pub(crate) usize);
@@ -170,7 +170,9 @@ impl<E: Event> EventWriter<E> {
 impl<E: Event> SystemParam for EventWriter<E> {
     type State = ();
 
-    const EXCLUSIVE: bool = false;
+    fn descriptor() -> SystemParamDescriptor {
+        SystemParamDescriptor::EventWriter
+    }
 
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, _state: &Arc<Self::State>) -> Self {
         EventWriter::new(world)
@@ -214,7 +216,9 @@ impl<E: Event> EventReader<E> {
 impl<E: Event> SystemParam for EventReader<E> {
     type State = EventState<E>;
 
-    const EXCLUSIVE: bool = false;
+    fn descriptor() -> SystemParamDescriptor {
+        SystemParamDescriptor::EventReader
+    }
 
     fn fetch<S: sealed::Sealed>(world: &Arc<World>, state: &Arc<Self::State>) -> Self {
         EventReader::new(world, state)

@@ -1,8 +1,8 @@
-use std::{cell::UnsafeCell, marker::PhantomData, ops::{Deref, DerefMut}, sync::Arc};
+use std::{any::TypeId, cell::UnsafeCell, marker::PhantomData, ops::{Deref, DerefMut}, sync::Arc};
 
 use parking_lot::RwLock;
 
-use crate::{sealed, SystemParam, World};
+use crate::{scheduler::{SystemParamDescriptor}, sealed, SystemParam, World};
 
 pub struct StateHolder<S: Send + Sync + Default>(UnsafeCell<S>);
 
@@ -17,7 +17,9 @@ pub struct State<S: Send + Sync + Default> {
 impl<S: Send + Sync + Default> SystemParam for State<S> {
     type State = StateHolder<S>;
 
-    const EXCLUSIVE: bool = true;
+    fn descriptor() -> SystemParamDescriptor {
+        SystemParamDescriptor::State
+    }
 
     fn fetch<T: sealed::Sealed>(_world: &Arc<World>, state: &Arc<Self::State>) -> Self {
         State { state: Arc::clone(state), _marker: PhantomData }

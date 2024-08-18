@@ -103,19 +103,17 @@ async fn test() {
     world.spawn(Health(1.0));
     world.spawn(Health(0.0));
     world.spawn((Health(0.0), Immortal));
-
     world.spawn(LastUpdate { instant: Instant::now() });
-
-    world.add_system(interval_system);
-    world.add_system(reader);
-
     world.add_resource(KillCounter(0));
 
-    world.add_system(detection);
-    world.add_system(execution);
+    let mut schedule = world.schedule_single_threaded();
 
-    world.add_system(state_system);
-    world.add_async_system(async_system);
+    schedule.add_system(interval_system);
+    schedule.add_system(reader);
+    schedule.add_system(detection);
+    schedule.add_system(execution);
+    schedule.add_system(state_system);
+    schedule.add_async_system(async_system);
 
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     for _ in 0..2 {
