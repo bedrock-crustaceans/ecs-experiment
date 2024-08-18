@@ -57,6 +57,15 @@ fn state_system(mut state: State<SystemState>) {
     println!("Counter is: {}", state.counter);
 }
 
+async fn async_system(mut reader: EventReader<Killed>, counter: Res<KillCounter>) {
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    println!("After one second, killed {} entities", counter.0);
+    for Killed { entity } in reader.read() {
+        println!("Killed {:?}", entity.id());
+    }
+}
+
 #[derive(Debug, Component)]
 struct LastUpdate { instant: Instant }
 
@@ -83,15 +92,6 @@ struct Killed {
 
 impl Event for Killed {}
 
-fn boxer1<P, S, Fut>(fun: S) -> impl Fn(P) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>
-where
-    P: SystemParam,
-    S: Fn(P) -> Fut + 'static,
-    Fut: Future<Output = ()> + Send + Sync + 'static,
-{
-    move |p0| Box::pin(fun(p0))
-}
-
 #[tokio::test]
 async fn test() {
     let world = World::new();
@@ -115,6 +115,7 @@ async fn test() {
     world.add_system(execution);
 
     world.add_system(state_system);
+    world.add_async_system(async_system);
 
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     for _ in 0..2 {

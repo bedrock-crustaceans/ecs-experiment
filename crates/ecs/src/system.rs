@@ -152,6 +152,43 @@ impl SystemParam for () {
     fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
 }
 
+pub type PinnedFut = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
+
+pub trait AsyncSystem<P> where P: SystemParams {
+    fn pinned(self, world: &Arc<World>) -> impl System + Send + Sync + 'static;
+}
+
+impl<P, F, Fut> AsyncSystem<P> for F 
+where 
+    F: Fn(P) -> Fut + Send + Sync + 'static, 
+    Fut: Future<Output = ()> + Send + Sync + 'static, 
+    P: SystemParam + Send + Sync + 'static
+{
+    fn pinned(self, world: &Arc<World>) -> impl System + Send + Sync + 'static {
+        let pinned = move |p1| -> PinnedFut { 
+            Box::pin(self(p1))
+        };
+
+        pinned.into_container(world)
+    }
+}
+
+impl<P1, P2, F, Fut> AsyncSystem<(P1, P2)> for F 
+where 
+    F: Fn(P1, P2) -> Fut + Send + Sync + 'static, 
+    Fut: Future<Output = ()> + Send + Sync + 'static, 
+    P1: SystemParam + Send + Sync + 'static,
+    P2: SystemParam + Send + Sync + 'static
+{
+    fn pinned(self, world: &Arc<World>) -> impl System + Send + Sync + 'static {
+        let pinned = move |p1, p2| -> PinnedFut {
+            Box::pin(self(p1, p2))
+        };
+
+        pinned.into_container(world)
+    }
+}
+
 /// Types that can be used as return values for a system.
 /// 
 /// This is useful for async systems which return futures but is also implemented for unit in the case of sync systems.

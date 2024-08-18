@@ -1,6 +1,8 @@
 use crate::component::{Components, SpawnBundle};
 use crate::entity::{Entities, Entity};
-use crate::{Events, ParameterizedSystem, Resource, Resources, System, FnContainer, SystemParams, SystemReturnable, Systems};
+use crate::{AsyncSystem, Events, FnContainer, ParameterizedSystem, PinnedFut, Resource, Resources, System, SystemParams, SystemReturnable, Systems};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use crate::scheduler::Scheduler;
 
@@ -45,8 +47,17 @@ impl World {
         S: ParameterizedSystem<P, R> + Send + Sync + 'static,
         FnContainer<P, R, S>: System,
     {
-        let wrapped = Arc::new(system.into_container(self));
-        self.systems.push(self, wrapped);
+        let contained = Arc::new(system.into_container(self));
+        self.systems.push(self, contained);
+    }
+
+    pub fn add_async_system<P, S>(self: &Arc<Self>, system: S)
+    where
+        P: SystemParams + Send + Sync + 'static,
+        S: AsyncSystem<P>
+    {
+        let contained = Arc::new(system.pinned(self));
+        self.systems.push(self, contained);
     }
 
     // pub fn async_system<P, R, S, F>(self: &Arc<Self>, system: S)
