@@ -1,19 +1,12 @@
 use ecs_derive::Component;
-use parking_lot::RwLock;
-use std::future::Future;
-use std::pin::Pin;
-use std::ptr::NonNull;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::entity::Entity;
-use crate::filter::With;
 use crate::{
-    Component, EntityId, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, State,
-    SystemParam, Without, World,
+    Component, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, State, Without, World,
 };
 
-static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
+// static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
 
 fn detection(query: Query<(Entity, &Health), Without<Immortal>>, mut writer: EventWriter<Killed>) {
     for (entity, health) in &query {
@@ -50,8 +43,6 @@ fn interval_system(query: Query<&mut LastUpdate>, mut writer: EventWriter<Interv
         update.instant = Instant::now();
         writer.write(Interval);
     }
-
-    let unsend: NonNull<()> = NonNull::dangling();
 }
 
 #[derive(Default)]

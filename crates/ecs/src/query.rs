@@ -1,15 +1,14 @@
 use std::{
     any::TypeId,
-    borrow::Borrow,
     marker::PhantomData,
-    sync::{atomic::Ordering, Arc},
+    sync::Arc,
 };
 
 use smallvec::SmallVec;
 
 use crate::{
     scheduler::{BorrowedTypeDescriptor, SystemParamDescriptor},
-    sealed, Component, EcsError, EcsResult, Entity, EntityIter, FilterParams, SystemParam,
+    sealed, Component, EcsResult, Entity, EntityIter, FilterParams, SystemParam,
     TypedStorage, World,
 };
 

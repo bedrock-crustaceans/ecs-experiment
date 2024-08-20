@@ -6,18 +6,12 @@ use std::{
     future::Future,
     marker::PhantomData,
     pin::Pin,
-    sync::{
-        atomic::{AtomicBool, AtomicUsize},
-        Arc,
-    },
+    sync::Arc
 };
 
 use crate::{
-    event::{Event, EventReader, EventWriter},
-    filter::FilterParams,
-    resource::{Res, ResMut, Resource},
-    scheduler::{SystemDescriptor, SystemId, SystemParamDescriptor},
-    sealed, EventState, Query, QueryParams, World,
+    scheduler::{SystemDescriptor, SystemParamDescriptor},
+    sealed, World,
 };
 
 pub unsafe trait System: Send + Sync {
@@ -38,8 +32,8 @@ pub unsafe trait System: Send + Sync {
 
     /// Runs any preparations before a system's first run.
     /// This is for example used to register all active event readers.
-    fn init(&self, world: &Arc<World>) {}
-    fn destroy(&self, world: &Arc<World>) {}
+    fn init(&self, _world: &Arc<World>) {}
+    fn destroy(&self, _world: &Arc<World>) {}
 }
 
 /// Wrapper around a system function pointer to be able to store the function's params.

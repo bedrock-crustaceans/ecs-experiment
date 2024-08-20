@@ -26,11 +26,9 @@ pub use system::*;
 pub use util::*;
 pub use world::*;
 
-fn hello_world() {
-    println!("Hello");
-}
-
 pub mod prelude {
+    #![allow(unused)]
+
     use super::component::Component;
     use super::entity::{Entity, EntityId};
     use super::event::{Event, EventId, EventReader, EventWriter};

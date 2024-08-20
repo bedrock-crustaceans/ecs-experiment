@@ -1,6 +1,5 @@
 use std::{
     marker::PhantomData,
-    ops::Deref,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -18,7 +17,7 @@ impl LockKind for ReadLock {
     const READ_ONLY: bool = true;
 }
 
-trait LockKind {
+pub trait LockKind {
     const READ_ONLY: bool;
 }
 

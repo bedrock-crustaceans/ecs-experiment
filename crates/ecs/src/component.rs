@@ -1,26 +1,27 @@
 use crate::entity::EntityId;
-use crate::{EcsError, EcsResult, PersistentLock};
+use crate::{EcsResult, PersistentLock};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::any::{Any, TypeId};
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::usize;
 
 pub trait Component: Send + Sync + 'static {}
 
 pub trait SpawnBundle {
-    fn insert_into(self, components: &Components, entity: EntityId);
+    fn insert_into(self, components: &Components, entity: EntityId) -> EcsResult<()>;
 }
 
 impl SpawnBundle for () {
-    fn insert_into(self, _components: &Components, _entity: EntityId) {}
+    fn insert_into(self, _components: &Components, _entity: EntityId) -> EcsResult<()> {
+        Ok(())
+    }
 }
 
 impl<'a, C0: Component + 'static> SpawnBundle for C0 {
-    fn insert_into(self, components: &Components, entity: EntityId) {
-        components.insert(entity, self);
+    fn insert_into(self, components: &Components, entity: EntityId) -> EcsResult<()> {
+        components.insert(entity, self)?;
+        Ok(())
     }
 }
 
@@ -29,9 +30,11 @@ where
     C0: Component + 'static,
     C1: Component + 'static,
 {
-    fn insert_into(self, components: &Components, entity: EntityId) {
-        components.insert(entity, self.0);
-        components.insert(entity, self.1);
+    fn insert_into(self, components: &Components, entity: EntityId) -> EcsResult<()> {
+        components.insert(entity, self.0)?;
+        components.insert(entity, self.1)?;
+
+        Ok(())
     }
 }
 

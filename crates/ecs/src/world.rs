@@ -1,12 +1,7 @@
 use crate::component::{Components, SpawnBundle};
 use crate::entity::{Entities, Entity};
 use crate::scheduler::{MultiThreadedExecutor, Schedule, Scheduler, SingleThreadedExecutor};
-use crate::{
-    AsyncSystem, Events, FnContainer, ParameterizedSystem, PinnedFut, Resource, Resources, System,
-    SystemParams, SystemReturnable, Systems,
-};
-use std::future::Future;
-use std::pin::Pin;
+use crate::{Events, Resource, Resources, Systems};
 use std::sync::Arc;
 
 #[derive(Default)]

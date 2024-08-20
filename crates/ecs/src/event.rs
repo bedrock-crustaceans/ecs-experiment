@@ -1,6 +1,5 @@
 use std::{
     any::{Any, TypeId},
-    collections::VecDeque,
     marker::PhantomData,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -9,8 +8,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use nohash_hasher::{BuildNoHashHasher, NoHashHasher};
-use parking_lot::RwLock;
+use nohash_hasher::BuildNoHashHasher;
 
 use crate::{scheduler::SystemParamDescriptor, sealed, SystemParam, World};
 
@@ -52,15 +50,10 @@ impl<E: Event> EventBus<E> {
 }
 
 trait EventHolder: Send + Sync {
-    fn clear(&self);
     fn as_any(&self) -> &dyn Any;
 }
 
 impl<E: Event> EventHolder for EventBus<E> {
-    fn clear(&self) {
-        self.events.clear();
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -237,9 +230,9 @@ impl<E: Event> EventReader<E> {
         EventIterator::from(self)
     }
 
-    pub fn par_read(&mut self) -> EventParIterator<E> {
-        todo!()
-    }
+    // pub fn par_read(&mut self) -> EventParIterator<E> {
+    //     todo!()
+    // }
 }
 
 impl<E: Event> SystemParam for EventReader<E> {
@@ -293,9 +286,9 @@ impl<'reader, E: Event> From<&'reader mut EventReader<E>> for EventIterator<'rea
     }
 }
 
-pub struct EventParIterator<'reader, E: Event> {
-    reader: &'reader mut EventReader<E>,
-}
+// pub struct EventParIterator<'reader, E: Event> {
+//     reader: &'reader mut EventReader<E>,
+// }
 
 pub trait Event: Clone + Send + Sync + 'static {}
 

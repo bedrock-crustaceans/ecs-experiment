@@ -30,7 +30,7 @@ pub struct Added<T: Component> {
 }
 
 impl<T: Component> Filter for Added<T> {
-    fn filter(entity: &Entity) -> bool {
+    fn filter(_entity: &Entity) -> bool {
         todo!()
     }
 }
@@ -40,7 +40,7 @@ pub struct Removed<T: Component> {
 }
 
 impl<T: Component> Filter for Removed<T> {
-    fn filter(entity: &Entity) -> bool {
+    fn filter(_entity: &Entity) -> bool {
         todo!()
     }
 }
@@ -50,7 +50,7 @@ pub struct Changed<T: Component> {
 }
 
 impl<T: Component> Filter for Changed<T> {
-    fn filter(entity: &Entity) -> bool {
+    fn filter(_entity: &Entity) -> bool {
         todo!()
     }
 }

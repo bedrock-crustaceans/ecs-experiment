@@ -1,5 +1,5 @@
 use crate::{
-    AsyncSystem, Component, EntityId, FnContainer, ParameterizedSystem, System, SystemParams,
+    AsyncSystem, EntityId, FnContainer, ParameterizedSystem, System, SystemParams,
     SystemReturnable, World,
 };
 use dashmap::{DashMap, DashSet};
@@ -10,7 +10,6 @@ use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::{any::TypeId, marker::PhantomData};
-use tokio::task::LocalSet;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BorrowedTypeDescriptor {

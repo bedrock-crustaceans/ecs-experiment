@@ -1,12 +1,9 @@
 use std::{
-    any::TypeId,
     cell::UnsafeCell,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
-
-use parking_lot::RwLock;
 
 use crate::{scheduler::SystemParamDescriptor, sealed, SystemParam, World};
 
