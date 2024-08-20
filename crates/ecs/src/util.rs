@@ -1,12 +1,51 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{marker::PhantomData, ops::Deref, sync::atomic::{AtomicUsize, Ordering}};
 
 use crate::{EcsError, EcsResult};
 
-pub struct LockMarker {
+// pub enum WriteLock {}
+
+// impl LockKind for WriteLock {
+//     const READ_ONLY: bool = false;
+// }
+
+// pub enum ReadLock {}
+
+// impl LockKind for ReadLock {
+//     const READ_ONLY: bool = true;
+// }
+
+// trait LockKind {
+//     const READ_ONLY: bool;
+// }
+
+// pub struct LockGuard<'lock, T, K: LockKind> {
+//     lock: &'lock PersistentLock<T>,
+//     _marker: PhantomData<(T, K)>
+// }
+
+// impl<'lock, T, K: LockKind> Deref for LockGuard<'lock, T, K> {
+//     type Target = ;
+
+//     fn deref(&self) -> &Self::Target {
+        
+//     }
+// }
+
+// impl<'lock, T, K: LockKind> Drop for LockGuard<'lock, T, K> {
+//     fn drop(&mut self) {
+//         if K::READ_ONLY {
+//             self.lock.release_read();
+//         } else {
+//             self.lock.release_write();
+//         }
+//     }
+// }
+
+pub struct PersistentLock {
     pub(crate) counter: AtomicUsize
 }
 
-impl LockMarker {
+impl PersistentLock {
     pub fn new() -> Self {
         Self { counter: AtomicUsize::new(0) }
     }

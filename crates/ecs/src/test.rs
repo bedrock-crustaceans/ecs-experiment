@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use ecs_derive::Component;
@@ -45,6 +46,8 @@ fn interval_system(query: Query<&mut LastUpdate>, mut writer: EventWriter<Interv
         update.instant = Instant::now();
         writer.write(Interval);
     }
+
+    let unsend: NonNull<()> = NonNull::dangling();
 }
 
 #[derive(Default)]

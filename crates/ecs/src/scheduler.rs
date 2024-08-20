@@ -115,9 +115,9 @@ impl<K: ExecutorKind> Schedule<K> {
 
     pub fn add_system<P, R, S>(&mut self, system: S) -> SystemId
     where
-        P: SystemParams + Send + Sync + 'static,
-        R: SystemReturnable + Send + Sync + 'static,
-        S: ParameterizedSystem<P, R> + Send + Sync + 'static,
+        P: SystemParams + 'static,
+        R: SystemReturnable + 'static,
+        S: ParameterizedSystem<P, R> + 'static,
         FnContainer<P, R, S>: System,
     {
         let system_id = self.next_id;
@@ -134,7 +134,7 @@ impl<K: ExecutorKind> Schedule<K> {
 
     pub fn add_async_system<P, S>(&mut self, system: S) -> SystemId
     where
-        P: SystemParams + Send + Sync + 'static,
+        P: SystemParams + 'static,
         S: AsyncSystem<P>
     {
         let system_id = self.next_id;

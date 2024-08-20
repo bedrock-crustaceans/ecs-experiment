@@ -16,7 +16,7 @@ pub trait QueryParams {
     /// Ensures that the entity has the requested components.
     fn filter(entity: &Entity) -> bool;
     /// Acquires the locks on the requested component storages.
-    fn acquire_locks(world: &World) -> EcsResult<()>;
+    fn get_locks(world: &World) -> EcsResult<()>;
     /// Releases all previously acquired locks.
     fn release_locks(world: &World);
 }
@@ -43,7 +43,7 @@ impl QueryParams for Entity {
         true
     }
 
-    fn acquire_locks(_world: &World) -> EcsResult<()> { Ok(()) /* Entities require no locks */ }
+    fn get_locks(_world: &World) -> EcsResult<()> { Ok(()) /* Entities require no locks */ }
     fn release_locks(_world: &World) { /* Entities require no locks. */ }
 }
 
@@ -82,8 +82,10 @@ impl<T: Component> QueryParams for &T {
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
         let storage_index = *typed.map.get(&entity.id())?.value();
-        let lock = typed.storage.read();
-        let component = lock.get(storage_index)?;
+        let storage = unsafe {
+            &*typed.storage.data_ptr()
+        };
+        let component = &storage[storage_index];
 
         let cast = unsafe {
             // SAFETY: The assertion at the beginning of this function guarantees that `Self::Fetchable<'w>` and `&'w T` are the exact same type.
@@ -112,10 +114,14 @@ impl<T: Component> QueryParams for &T {
             .downcast_ref()
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
-        typed.lock.release_read();
+        // Safety: This code is only called in the `Drop` impl of a `Query`.
+        // If a query has been constructed then that means this thread must have acquired the locks succesfully.
+        unsafe {
+            typed.storage.force_unlock_read()
+        }
     }
 
-    fn acquire_locks(world: &World) -> EcsResult<()> {
+    fn get_locks(world: &World) -> EcsResult<()> {
         let type_id = TypeId::of::<T>();
         let typeless = world.components.map
             .get(&type_id)
@@ -127,7 +133,10 @@ impl<T: Component> QueryParams for &T {
             .downcast_ref()
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
-        typed.lock.acquire_read()
+        let guard = typed.storage.read();
+        std::mem::forget(guard);
+
+        Ok(())
     }
 }
 
@@ -166,11 +175,11 @@ impl<T: Component> QueryParams for &mut T {
             .downcast_ref()
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
-
         let storage_index = *typed.map.get(&entity.id())?.value();
-
-        let mut lock = typed.storage.write();
-        let component = lock.get_mut(storage_index)?;
+        let storage = unsafe {
+            &mut *typed.storage.data_ptr()
+        };
+        let component = &mut storage[storage_index];
 
         let cast = unsafe {
             // SAFETY: The assertion at the beginning of this function guarantees that `Self::Fetchable<'w>` and `&'w T` are the exact same type.
@@ -187,7 +196,7 @@ impl<T: Component> QueryParams for &mut T {
         entity.has::<T>()
     }
 
-    fn acquire_locks(world: &World) -> EcsResult<()> {
+    fn get_locks(world: &World) -> EcsResult<()> {
         let type_id = TypeId::of::<T>();
         let typeless = world.components.map
             .get(&type_id)
@@ -199,7 +208,10 @@ impl<T: Component> QueryParams for &mut T {
             .downcast_ref()
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
-        typed.lock.acquire_write()
+        let guard = typed.storage.write();
+        std::mem::forget(guard);
+
+        Ok(())
     }
 
     fn release_locks(world: &World) {
@@ -214,7 +226,11 @@ impl<T: Component> QueryParams for &mut T {
             .downcast_ref()
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
-        typed.lock.release_write()
+        // Safety: This code is only called in the `Drop` impl of a `Query`.
+        // If a query has been constructed then that means this thread must have acquired the locks succesfully.
+        unsafe {
+            typed.storage.force_unlock_read()
+        }
     }
 }
 
@@ -250,10 +266,10 @@ impl<Q1: QueryParams, Q2: QueryParams> QueryParams for (Q1, Q2) {
         Q1::filter(entity) && Q2::filter(entity)
     }
 
-    fn acquire_locks(world: &World) -> EcsResult<()> {
-        Q1::acquire_locks(world)?;
+    fn get_locks(world: &World) -> EcsResult<()> {
+        Q1::get_locks(world)?;
 
-        if let Err(err) = Q2::acquire_locks(world) {
+        if let Err(err) = Q2::get_locks(world) {
             Q1::release_locks(world);
             return Err(err)
         }
@@ -275,17 +291,17 @@ pub struct Query<Q: QueryParams, F: FilterParams = ()> {
     /// A lock should only be used from the thread that owns it. If this query were to be 
     /// transferred to another thread, it would cause undefined behaviour. 
     /// 
-    /// I don't see any easy way to make a query thread safe as that would require 
+    /// I don't see any easy way to make a query thread safe as that would require moving lock guards between threads.
     _marker: PhantomData<*const (Q, F)>
 }
 
-unsafe impl<Q: QueryParams, F: FilterParams> Send for Query<Q, F> {}
-unsafe impl<Q: QueryParams, F: FilterParams> Sync for Query<Q, F> {}
+// unsafe impl<Q: QueryParams, F: FilterParams> Send for Query<Q, F> {}
+// unsafe impl<Q: QueryParams, F: FilterParams> Sync for Query<Q, F> {}
 
 impl<Q: QueryParams, F: FilterParams> Query<Q, F> {
     pub fn new(world: &Arc<World>) -> EcsResult<Self> {
         // Obtain lock on component storage.
-        Q::acquire_locks(world)?;
+        Q::get_locks(world)?;
 
         Ok(Self { world: Arc::clone(world), _marker: PhantomData })
     }

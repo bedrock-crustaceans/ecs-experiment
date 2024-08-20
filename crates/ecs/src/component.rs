@@ -1,8 +1,9 @@
 use crate::entity::EntityId;
-use crate::{EcsError, EcsResult, LockMarker};
+use crate::{EcsError, EcsResult, PersistentLock};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::any::{Any, TypeId};
+use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::usize;
@@ -41,43 +42,39 @@ pub trait TypelessStorage: Send + Sync {
 }
 
 pub struct TypedStorage<T> {
-    pub(crate) lock: LockMarker,
-
     pub(crate) map: DashMap<EntityId, usize>,
     pub(crate) reverse_map: RwLock<Vec<EntityId>>,
     pub(crate) storage: RwLock<Vec<T>>,
 }
 
+unsafe impl<T: Send + Sync + 'static> Send for TypedStorage<T> {}
+unsafe impl<T: Send + Sync + 'static> Sync for TypedStorage<T> {}
+
 impl<T: Send + Sync + 'static> TypedStorage<T> {
+    /// Creates a new storage, storing the component and entity.
     pub fn with(entity: EntityId, component: T) -> Box<dyn TypelessStorage> {
         Box::new(Self {
-            lock: LockMarker::new(),
             map: DashMap::from_iter([(entity, 0)]),
             reverse_map: RwLock::new(vec![entity]),
             storage: RwLock::new(vec![component]),
         })
     }
 
+    /// Inserts a component for the given entity, returning the old component if it had one.
     pub fn insert(&self, entity: EntityId, component: T) -> EcsResult<Option<T>> {
-        self.lock.acquire_write()?;
+        let mut lock = self.storage.write();
 
         let result = if let Some(index) = self.map.get(&entity) {
-            let mut lock = self.storage.write();
             Ok(Some(std::mem::replace(&mut lock[*index], component)))
         } else {
-            let mut lock = self.storage.write();
-
             let index = lock.len();
             lock.push(component);
-            drop(lock);
 
             self.map.insert(entity, index);
             self.reverse_map.write().push(entity);
 
             Ok(None)
         };
-
-        self.lock.release_write();
 
         result
     }
@@ -86,7 +83,6 @@ impl<T: Send + Sync + 'static> TypedStorage<T> {
 impl<T> Default for TypedStorage<T> {
     fn default() -> Self {
         Self {
-            lock: LockMarker::new(),
             map: DashMap::new(),
             reverse_map: RwLock::new(Vec::new()),
             storage: RwLock::new(Vec::new()),
@@ -102,6 +98,7 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
     fn remove(&self, entity: EntityId) -> bool {
         if let Some((_, index)) = self.map.remove(&entity) {
             let mut lock = self.storage.write();
+
             // Drop this entity's component from storage and move the tail to its position.
             lock.swap_remove(index);
             if lock.is_empty() {
@@ -116,9 +113,11 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
             let modified_id = reverse_lock[reverse_lock.len() - 1];
             self.map.insert(modified_id, index);
             reverse_lock.swap_remove(index);
-        }
 
-        self.storage.read().is_empty()
+            lock.is_empty()
+        } else {
+            self.storage.read().is_empty()
+        }
     }
 
     fn has_entity(&self, entity: EntityId) -> bool {

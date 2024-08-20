@@ -2,10 +2,10 @@ use std::{any::{Any, TypeId}, cell::UnsafeCell, marker::PhantomData, ops::{Deref
 
 use dashmap::DashMap;
 
-use crate::{scheduler::SystemParamDescriptor, sealed, EcsError, EcsResult, LockMarker, SystemParam, World};
+use crate::{scheduler::SystemParamDescriptor, sealed, EcsError, EcsResult, PersistentLock, SystemParam, World};
 
 struct ResourceSingleton<R: Resource> {
-    lock_marker: LockMarker,
+    lock_marker: PersistentLock,
     resource: UnsafeCell<R>
 }
 
@@ -63,7 +63,7 @@ impl Resources {
 
     pub fn insert<R: Resource>(&self, resource: R) {
         self.map.insert(TypeId::of::<R>(), Box::new(ResourceSingleton {
-            resource: UnsafeCell::new(resource), lock_marker: LockMarker::new()
+            resource: UnsafeCell::new(resource), lock_marker: PersistentLock::new()
         }));
     }
 

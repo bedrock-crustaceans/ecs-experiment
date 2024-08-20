@@ -26,6 +26,21 @@ pub use system::*;
 pub use world::*;
 pub use filter::*;
 
+fn hello_world() {
+    println!("Hello");
+}
+
+pub mod prelude {
+    use super::component::Component;
+    use super::entity::{Entity, EntityId};
+    use super::event::{Event, EventId, EventReader, EventWriter};
+    use super::query::Query;
+    use super::resource::{Resource, Res, ResMut};
+    use super::world::World;
+    use super::filter::{With, Without, Added, Changed, Removed};
+    use super::state::State;
+}
+
 pub(crate) mod sealed {
     pub trait Sealed {}
     pub enum Sealer {}
