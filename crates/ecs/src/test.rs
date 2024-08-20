@@ -60,10 +60,16 @@ fn state_system(mut state: State<SystemState>) {
     println!("Counter is: {}", state.counter);
 }
 
-async fn async_system(mut reader: EventReader<Killed>, counter: Res<KillCounter>) {
-    tokio::time::sleep(Duration::from_secs(1)).await;
+#[derive(Default)]
+struct TickCounter {
+    ticks: usize
+}
 
-    println!("After one second, killed {} entities", counter.0);
+async fn async_system(mut reader: EventReader<Killed>, counter: Res<KillCounter>, mut state: State<TickCounter>) {
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    state.ticks += 1;
+
+    println!("After {} second(s), killed {} entities", state.ticks, counter.0);
     for Killed { entity } in reader.read() {
         println!("Killed {:?}", entity.id());
     }
@@ -120,7 +126,7 @@ async fn test() {
 
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     for _ in 0..2 {
-        world.tick().await;
+        schedule.run().await;
         interval.tick().await;        
     }
 }

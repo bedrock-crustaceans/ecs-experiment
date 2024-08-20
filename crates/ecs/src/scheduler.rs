@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use dashmap::{DashMap, DashSet};
 use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use nohash_hasher::BuildNoHashHasher;
 use smallvec::SmallVec;
 use tokio::task::LocalSet;
@@ -159,13 +160,15 @@ impl<K: ExecutorKind> Schedule<K> {
         // at await points. Therefore the systems need to run inside a LocalSet but this would only run systems
         // on the main thread. Maybe Rayon is a good idea?
 
-        // let mut futures = FuturesUnordered::new();
-        // for (id, system) in &self.systems {
-        //     let world = Arc::clone(&self.world);
-        //     let system = Arc::clone(system);
+        let mut futures = FuturesUnordered::new();
+        for (id, system) in &self.systems {
+            let world = Arc::clone(&self.world);
+            let system = Arc::clone(system);
 
-        //     system.call(&world);
-        // }
+            futures.push(tokio::spawn(async move {
+                system.call(&world).await;
+            }));
+        }
 
         // let mut local_set = LocalSet::new();
 
@@ -179,8 +182,8 @@ impl<K: ExecutorKind> Schedule<K> {
         //     }));
         // }
 
-        // // Run all futures to completion
-        // while let Some(_) = futures.next().await {}
+        // Run all futures to completion
+        while let Some(_) = futures.next().await {}
 
         self.world.scheduler.post_tick(&self.world);
     }

@@ -36,15 +36,20 @@ where
 }
 
 pub trait TypelessStorage: Send + Sync {
+    /// Casts the storage to `Any`. 
     fn as_any(&self) -> &dyn Any;
-    fn remove(&self, entity: EntityId) -> bool;
+    /// Removes the entity from the storage. Returns `true` if the storage is now empty.
+    fn remove(&self, entity: EntityId) -> EcsResult<bool>;
+    /// Returns whether the storage contains the given entity.
     fn has_entity(&self, entity: EntityId) -> bool;
 }
 
 pub struct TypedStorage<T> {
     pub(crate) map: DashMap<EntityId, usize>,
     pub(crate) reverse_map: RwLock<Vec<EntityId>>,
-    pub(crate) storage: RwLock<Vec<T>>,
+
+    pub(crate) lock: PersistentLock,
+    pub(crate) storage: UnsafeCell<Vec<T>>,
 }
 
 unsafe impl<T: Send + Sync + 'static> Send for TypedStorage<T> {}
@@ -56,27 +61,52 @@ impl<T: Send + Sync + 'static> TypedStorage<T> {
         Box::new(Self {
             map: DashMap::from_iter([(entity, 0)]),
             reverse_map: RwLock::new(vec![entity]),
-            storage: RwLock::new(vec![component]),
+
+            lock: PersistentLock::new(),
+            storage: UnsafeCell::new(vec![component]),
         })
     }
 
     /// Inserts a component for the given entity, returning the old component if it had one.
-    pub fn insert(&self, entity: EntityId, component: T) -> EcsResult<Option<T>> {
-        let mut lock = self.storage.write();
+    /// 
+    /// This function returns an error if the component storage is currently locked.
+    pub fn insert(&self, entity: EntityId, component: T) -> EcsResult<Option<T>> {        
+        if let Some(index) = self.map.get(&entity) {
+            // Entity already has a component of this type, replace it.
 
-        let result = if let Some(index) = self.map.get(&entity) {
-            Ok(Some(std::mem::replace(&mut lock[*index], component)))
+            let replaced = {
+                let _guard = self.lock.write()?;
+                // Safety: Acquiring a mutable reference to the vec is safe because the
+                // `acquire_write` call above ensures exclusive access.
+                let storage = unsafe {
+                    &mut *self.storage.get()
+                };
+
+                std::mem::replace(&mut storage[*index], component)
+            };
+
+            Ok(Some(replaced))
         } else {
-            let index = lock.len();
-            lock.push(component);
+            // Entity does not have a component of this type yet.
+
+            let index;
+            {
+                let _guard = self.lock.write()?;
+                // Safety: Acquiring a mutable reference to the vec is safe because the
+                // `acquire_write` call above ensures exclusive access.
+                let storage = unsafe {
+                    &mut *self.storage.get()
+                };
+
+                index = storage.len();
+                storage.push(component);
+            }
 
             self.map.insert(entity, index);
             self.reverse_map.write().push(entity);
 
             Ok(None)
-        };
-
-        result
+        }
     }
 }
 
@@ -85,7 +115,8 @@ impl<T> Default for TypedStorage<T> {
         Self {
             map: DashMap::new(),
             reverse_map: RwLock::new(Vec::new()),
-            storage: RwLock::new(Vec::new()),
+            lock: PersistentLock::new(),
+            storage: UnsafeCell::new(Vec::new()),
         }
     }
 }
@@ -95,17 +126,24 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
         self
     }
 
-    fn remove(&self, entity: EntityId) -> bool {
+    fn remove(&self, entity: EntityId) -> EcsResult<bool> {
         if let Some((_, index)) = self.map.remove(&entity) {
-            let mut lock = self.storage.write();
+            let is_empty;
+            {
+                let _guard = self.lock.write()?;
+                // Safety: Acquiring a mutable reference to the vec is safe because the
+                // `acquire_write` call above ensures exclusive access.
+                let storage = unsafe {
+                    &mut *self.storage.get()
+                };
 
-            // Drop this entity's component from storage and move the tail to its position.
-            lock.swap_remove(index);
-            if lock.is_empty() {
-                // Do not try to remap entities when the last entity is removed.
-                // Destroy the reverse mapping instead.
+                storage.swap_remove(index);
+                is_empty = storage.is_empty();
+            }
+
+            if is_empty {
                 self.reverse_map.write().clear();
-                return false
+                return Ok(false)
             }
 
             // Modify mapping for affected tail entity.
@@ -114,9 +152,16 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
             self.map.insert(modified_id, index);
             reverse_lock.swap_remove(index);
 
-            lock.is_empty()
+            Ok(true)
         } else {
-            self.storage.read().is_empty()
+            let _guard = self.lock.read()?;
+            // Safety: Acquiring a mutable reference to the vec is safe because the
+                // `acquire_write` call above ensures non-mutable access.
+            let storage = unsafe {
+                &*self.storage.get()
+            };
+
+            Ok(storage.is_empty())
         }
     }
 
@@ -145,19 +190,6 @@ impl Components {
         }
     }
 
-    // /// # Warning
-    // pub fn get<T: Component>(&self, entity: EntityId) -> Option<&T> {
-    //     let type_id = TypeId::of::<T>();
-    //     let store_kv = self.map.get(&type_id)?;
-    //     let typed_store: &TypedStorage<T> = store_kv.value().as_any().downcast_ref().unwrap();
-
-    //     todo!()
-    // }
-
-    // pub fn get_mut<T: Component>(&self, entity: EntityId) -> Option<&mut T> {
-    //     todo!()
-    // }
-
     pub fn has_component<T: Component>(&self, entity: EntityId) -> bool {
         let type_id = TypeId::of::<T>();
         if let Some(store_kv) = self.map.get(&type_id) {
@@ -168,6 +200,6 @@ impl Components {
     }
 
     pub fn despawn(&self, entity: EntityId) {
-        self.map.retain(|_, store| !store.remove(entity));
+        self.map.retain(|_, store| !store.remove(entity).expect("Cannot despawn components, storage is locked."));
     }
 }

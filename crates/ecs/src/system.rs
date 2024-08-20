@@ -5,7 +5,7 @@ use std::{any::TypeId, future::Future, marker::PhantomData, pin::Pin, sync::{ato
 
 use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, scheduler::{SystemDescriptor, SystemId, SystemParamDescriptor}, sealed, EventState, Query, QueryParams, World};
 
-pub unsafe trait System {
+pub unsafe trait System: Send + Sync {
     fn descriptor(&self) -> SystemDescriptor;
 
     /// # Safety
@@ -143,7 +143,7 @@ where
     }
 }
 
-pub trait SystemParam {
+pub trait SystemParam: Send + Sync {
     type State: Send + Sync;
 
     fn descriptor() -> SystemParamDescriptor;
@@ -214,7 +214,7 @@ where
 /// 
 /// This is useful for async systems which return futures but is also implemented for unit in the case of sync systems.
 /// In the future this could possibly also be used for returning errors or something in that direction.
-pub trait SystemReturnable: 'static {
+pub trait SystemReturnable: Send + Sync + 'static {
     const IS_ASYNC: bool;
 }
 
@@ -226,7 +226,7 @@ impl SystemReturnable for Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
     const IS_ASYNC: bool = true;
 }
 
-pub trait ParameterizedSystem<P: SystemParams, R: SystemReturnable>: Sized {
+pub trait ParameterizedSystem<P: SystemParams, R: SystemReturnable>: Send + Sync + Sized {
     fn into_container(self, id: usize, world: &Arc<World>) -> FnContainer<P, R, Self> {
         FnContainer {
             id,
@@ -250,7 +250,7 @@ pub trait ParameterizedSystem<P: SystemParams, R: SystemReturnable>: Sized {
 
 impl<F, R, P0> ParameterizedSystem<P0, R> for F
 where
-    F: Fn(P0) -> R,
+    F: Fn(P0) -> R + Send + Sync,
     P0: SystemParam,
     R: SystemReturnable
 {
@@ -262,7 +262,7 @@ where
 
 impl<F, R, P0, P1> ParameterizedSystem<(P0, P1), R> for F
 where
-    F: Fn(P0, P1) -> R,
+    F: Fn(P0, P1) -> R + Send + Sync,
     P0: SystemParam,
     P1: SystemParam,
     R: SystemReturnable

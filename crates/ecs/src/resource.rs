@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use crate::{scheduler::SystemParamDescriptor, sealed, EcsError, EcsResult, PersistentLock, SystemParam, World};
 
 struct ResourceSingleton<R: Resource> {
-    lock_marker: PersistentLock,
+    lock: PersistentLock,
     resource: UnsafeCell<R>
 }
 
@@ -13,13 +13,13 @@ unsafe impl<R: Resource> Send for ResourceSingleton<R> {}
 unsafe impl<R: Resource> Sync for ResourceSingleton<R> {}
 
 impl<R: Resource> ResourceSingleton<R> {
-    pub fn acquire_read(&self) -> EcsResult<()> {
-        self.lock_marker.acquire_read()
-    }
+    // pub fn acquire_read(&self) -> EcsResult<()> {
+    //     self.lock_marker.read()
+    // }
 
-    pub fn release_read(&self) {
-        self.lock_marker.release_read();
-    }
+    // pub fn release_read(&self) {
+    //     self.lock_marker.force_release_read();
+    // }
 
     /// # Safety:
     /// 
@@ -29,13 +29,13 @@ impl<R: Resource> ResourceSingleton<R> {
         self.resource.get()
     }
 
-    pub fn acquire_write(&self) -> EcsResult<()> {
-        self.lock_marker.acquire_write()
-    }
+    // pub fn acquire_write(&self) -> EcsResult<()> {
+    //     self.lock_marker.write()
+    // }
 
-    pub fn release_write(&self) {
-        self.lock_marker.release_write();
-    }
+    // pub fn release_write(&self) {
+    //     self.lock_marker.force_release_write();
+    // }
 }
 
 trait ResourceHolder: Send + Sync {
@@ -63,7 +63,7 @@ impl Resources {
 
     pub fn insert<R: Resource>(&self, resource: R) {
         self.map.insert(TypeId::of::<R>(), Box::new(ResourceSingleton {
-            resource: UnsafeCell::new(resource), lock_marker: PersistentLock::new()
+            resource: UnsafeCell::new(resource), lock: PersistentLock::new()
         }));
     }
 
@@ -80,18 +80,27 @@ impl Resources {
         })
     }
 
-    pub fn acquire_read<R: Resource>(&self) -> EcsResult<()> {
+    pub fn read<R: Resource>(&self) -> EcsResult<()> {
         let singleton = self.map.get(&TypeId::of::<R>()).ok_or(EcsError::NotFound)?;
         let singleton: &ResourceSingleton<R> = singleton.as_any().downcast_ref().expect("Incorrect resource singleton inserted into map");
 
-        singleton.acquire_read()
+        let guard = singleton.lock.read()?;
+        std::mem::forget(guard);
+
+        Ok(())
     }
 
-    pub fn release_read<R: Resource>(&self) {
+    /// Unlocks the read lock on this resource.
+    /// # Safety
+    /// 
+    /// This function should only be called if previous call to [`read`](Self::read) was successful.
+    pub unsafe fn force_release_read<R: Resource>(&self) {
         let Some(singleton) = self.map.get(&TypeId::of::<R>()) else { return };
         let singleton: &ResourceSingleton<R> = singleton.as_any().downcast_ref().expect("Incorrect resource singleton inserted into map");
 
-        singleton.release_read();
+        unsafe {
+            singleton.lock.force_release_read()
+        }
     }
 
     /// # Safety:
@@ -107,18 +116,28 @@ impl Resources {
         })
     }
 
-    pub fn acquire_write<R: Resource>(&self) -> EcsResult<()> {
+    /// Obtains a write lock on this resource.
+    pub fn write<R: Resource>(&self) -> EcsResult<()> {
         let singleton = self.map.get(&TypeId::of::<R>()).ok_or(EcsError::NotFound)?;
         let singleton: &ResourceSingleton<R> = singleton.as_any().downcast_ref().expect("Incorrect resource singleton inserted into map");
 
-        singleton.acquire_write()
+        let guard = singleton.lock.write()?;
+        std::mem::forget(guard);
+
+        Ok(())
     }
 
-    pub fn release_write<R: Resource>(&self) {
+    /// Unlocks the write lock on this resource.
+    /// # Safety
+    /// 
+    /// This function should only be called if previous call to [`write`](Self::write) was successful.
+    pub unsafe fn force_release_write<R: Resource>(&self) {
         let Some(singleton) = self.map.get(&TypeId::of::<R>()) else { return };
         let singleton: &ResourceSingleton<R> = singleton.as_any().downcast_ref().expect("Incorrect resource singleton inserted into map");
 
-        singleton.release_write()
+        unsafe {
+            singleton.lock.force_release_write()
+        }
     }
 }
 
@@ -150,7 +169,7 @@ impl<R: Resource> Deref for Res<R> {
     fn deref(&self) -> &Self::Target {
         let locked = self.locked.load(Ordering::SeqCst);
         if !locked {
-            self.world.resources.acquire_read::<R>().unwrap();
+            self.world.resources.read::<R>().unwrap();
             self.locked.store(true, Ordering::SeqCst);
         }
 
@@ -163,7 +182,11 @@ impl<R: Resource> Deref for Res<R> {
 impl<R: Resource> Drop for Res<R> {
     fn drop(&mut self) {
         if self.locked.load(Ordering::SeqCst) {
-            self.world.resources.release_read::<R>();
+            // Safety: This is safe because due to the condition above, this lock has been properly acquired.
+            // It is therefore safe to release it.
+            unsafe {
+                self.world.resources.force_release_read::<R>();
+            };
         }
     }
 }
@@ -194,7 +217,7 @@ impl<R: Resource> Deref for ResMut<R> {
     fn deref(&self) -> &Self::Target {
         let locked = self.locked.load(Ordering::SeqCst);
         if !locked {
-            self.world.resources.acquire_write::<R>().unwrap();
+            self.world.resources.write::<R>().unwrap();
             self.locked.store(true, Ordering::SeqCst);
         }
 
@@ -208,7 +231,7 @@ impl<R: Resource> DerefMut for ResMut<R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let locked = self.locked.load(Ordering::SeqCst);
         if !locked {
-            self.world.resources.acquire_write::<R>().unwrap();
+            self.world.resources.write::<R>().unwrap();
             self.locked.store(true, Ordering::SeqCst);
         }
 
@@ -221,7 +244,11 @@ impl<R: Resource> DerefMut for ResMut<R> {
 impl<R: Resource> Drop for ResMut<R> {
     fn drop(&mut self) {
         if self.locked.load(Ordering::SeqCst) {
-            self.world.resources.release_write::<R>();
+            // Safety: This is safe because due to the condition above, this lock has been properly acquired.
+            // It is therefore safe to release it.
+            unsafe {
+                self.world.resources.force_release_write::<R>();
+            }
         }
     }
 }

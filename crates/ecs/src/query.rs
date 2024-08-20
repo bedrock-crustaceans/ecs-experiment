@@ -83,7 +83,7 @@ impl<T: Component> QueryParams for &T {
 
         let storage_index = *typed.map.get(&entity.id())?.value();
         let storage = unsafe {
-            &*typed.storage.data_ptr()
+            &*typed.storage.get()
         };
         let component = &storage[storage_index];
 
@@ -104,9 +104,10 @@ impl<T: Component> QueryParams for &T {
 
     fn release_locks(world: &World) {
         let type_id = TypeId::of::<T>();
-        let typeless = world.components.map
-            .get(&type_id)
-            .expect("Storage to be unlocked does not exist");
+        let Some(typeless) = world.components.map.get(&type_id) else {
+            // Storage does not exist.
+            return;
+        };
 
         let typed: &TypedStorage<T> = typeless
             .value()
@@ -117,15 +118,16 @@ impl<T: Component> QueryParams for &T {
         // Safety: This code is only called in the `Drop` impl of a `Query`.
         // If a query has been constructed then that means this thread must have acquired the locks succesfully.
         unsafe {
-            typed.storage.force_unlock_read()
+            typed.lock.force_release_read()
         }
     }
 
     fn get_locks(world: &World) -> EcsResult<()> {
         let type_id = TypeId::of::<T>();
-        let typeless = world.components.map
-            .get(&type_id)
-            .expect("Storage to be locked does not exist");
+        let Some(typeless) = world.components.map.get(&type_id) else {
+            // Storage does not exist so it does not have to be locked.
+            return Ok(())
+        };
 
         let typed: &TypedStorage<T> = typeless
             .value()
@@ -133,7 +135,7 @@ impl<T: Component> QueryParams for &T {
             .downcast_ref()
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
-        let guard = typed.storage.read();
+        let guard = typed.lock.read()?;
         std::mem::forget(guard);
 
         Ok(())
@@ -177,7 +179,7 @@ impl<T: Component> QueryParams for &mut T {
 
         let storage_index = *typed.map.get(&entity.id())?.value();
         let storage = unsafe {
-            &mut *typed.storage.data_ptr()
+            &mut *typed.storage.get()
         };
         let component = &mut storage[storage_index];
 
@@ -198,9 +200,10 @@ impl<T: Component> QueryParams for &mut T {
 
     fn get_locks(world: &World) -> EcsResult<()> {
         let type_id = TypeId::of::<T>();
-        let typeless = world.components.map
-            .get(&type_id)
-            .expect("Storage to be locked does not exist");
+        let Some(typeless) = world.components.map.get(&type_id) else {
+            // Storage does not exist so it does not have to be locked.
+            return Ok(())
+        };
 
         let typed: &TypedStorage<T> = typeless
             .value()
@@ -208,7 +211,7 @@ impl<T: Component> QueryParams for &mut T {
             .downcast_ref()
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
-        let guard = typed.storage.write();
+        let guard = typed.lock.write()?;
         std::mem::forget(guard);
 
         Ok(())
@@ -216,9 +219,10 @@ impl<T: Component> QueryParams for &mut T {
 
     fn release_locks(world: &World) {
         let type_id = TypeId::of::<T>();
-        let typeless = world.components.map
-            .get(&type_id)
-            .expect("Storage to be locked does not exist");
+        let Some(typeless) = world.components.map.get(&type_id) else {
+            // Storage to be unlocked does not exist.
+            return
+        };
 
         let typed: &TypedStorage<T> = typeless
             .value()
@@ -229,7 +233,7 @@ impl<T: Component> QueryParams for &mut T {
         // Safety: This code is only called in the `Drop` impl of a `Query`.
         // If a query has been constructed then that means this thread must have acquired the locks succesfully.
         unsafe {
-            typed.storage.force_unlock_read()
+            typed.lock.force_release_write()
         }
     }
 }
@@ -295,8 +299,8 @@ pub struct Query<Q: QueryParams, F: FilterParams = ()> {
     _marker: PhantomData<*const (Q, F)>
 }
 
-// unsafe impl<Q: QueryParams, F: FilterParams> Send for Query<Q, F> {}
-// unsafe impl<Q: QueryParams, F: FilterParams> Sync for Query<Q, F> {}
+unsafe impl<Q: QueryParams, F: FilterParams> Send for Query<Q, F> {}
+unsafe impl<Q: QueryParams, F: FilterParams> Sync for Query<Q, F> {}
 
 impl<Q: QueryParams, F: FilterParams> Query<Q, F> {
     pub fn new(world: &Arc<World>) -> EcsResult<Self> {
