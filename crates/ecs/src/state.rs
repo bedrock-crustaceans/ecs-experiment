@@ -1,17 +1,23 @@
-use std::{any::TypeId, cell::UnsafeCell, marker::PhantomData, ops::{Deref, DerefMut}, sync::Arc};
+use std::{
+    any::TypeId,
+    cell::UnsafeCell,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
 use parking_lot::RwLock;
 
-use crate::{scheduler::{SystemParamDescriptor}, sealed, SystemParam, World};
+use crate::{scheduler::SystemParamDescriptor, sealed, SystemParam, World};
 
 pub struct StateHolder<S: Send + Sync + Default>(UnsafeCell<S>);
 
 unsafe impl<S: Send + Sync + Default> Send for StateHolder<S> {}
 unsafe impl<S: Send + Sync + Default> Sync for StateHolder<S> {}
 
-pub struct State<S: Send + Sync + Default> {   
+pub struct State<S: Send + Sync + Default> {
     state: Arc<StateHolder<S>>,
-    _marker: PhantomData<S>
+    _marker: PhantomData<S>,
 }
 
 impl<S: Send + Sync + Default> SystemParam for State<S> {
@@ -22,7 +28,10 @@ impl<S: Send + Sync + Default> SystemParam for State<S> {
     }
 
     fn fetch<T: sealed::Sealed>(_world: &Arc<World>, state: &Arc<Self::State>) -> Self {
-        State { state: Arc::clone(state), _marker: PhantomData }
+        State {
+            state: Arc::clone(state),
+            _marker: PhantomData,
+        }
     }
 
     fn state(_world: &Arc<crate::World>) -> Arc<Self::State> {

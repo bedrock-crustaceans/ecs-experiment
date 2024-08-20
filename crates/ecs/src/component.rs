@@ -36,7 +36,7 @@ where
 }
 
 pub trait TypelessStorage: Send + Sync {
-    /// Casts the storage to `Any`. 
+    /// Casts the storage to `Any`.
     fn as_any(&self) -> &dyn Any;
     /// Removes the entity from the storage. Returns `true` if the storage is now empty.
     fn remove(&self, entity: EntityId) -> EcsResult<bool>;
@@ -68,9 +68,9 @@ impl<T: Send + Sync + 'static> TypedStorage<T> {
     }
 
     /// Inserts a component for the given entity, returning the old component if it had one.
-    /// 
+    ///
     /// This function returns an error if the component storage is currently locked.
-    pub fn insert(&self, entity: EntityId, component: T) -> EcsResult<Option<T>> {        
+    pub fn insert(&self, entity: EntityId, component: T) -> EcsResult<Option<T>> {
         if let Some(index) = self.map.get(&entity) {
             // Entity already has a component of this type, replace it.
 
@@ -78,9 +78,7 @@ impl<T: Send + Sync + 'static> TypedStorage<T> {
                 let _guard = self.lock.write()?;
                 // Safety: Acquiring a mutable reference to the vec is safe because the
                 // `acquire_write` call above ensures exclusive access.
-                let storage = unsafe {
-                    &mut *self.storage.get()
-                };
+                let storage = unsafe { &mut *self.storage.get() };
 
                 std::mem::replace(&mut storage[*index], component)
             };
@@ -94,9 +92,7 @@ impl<T: Send + Sync + 'static> TypedStorage<T> {
                 let _guard = self.lock.write()?;
                 // Safety: Acquiring a mutable reference to the vec is safe because the
                 // `acquire_write` call above ensures exclusive access.
-                let storage = unsafe {
-                    &mut *self.storage.get()
-                };
+                let storage = unsafe { &mut *self.storage.get() };
 
                 index = storage.len();
                 storage.push(component);
@@ -133,9 +129,7 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
                 let _guard = self.lock.write()?;
                 // Safety: Acquiring a mutable reference to the vec is safe because the
                 // `acquire_write` call above ensures exclusive access.
-                let storage = unsafe {
-                    &mut *self.storage.get()
-                };
+                let storage = unsafe { &mut *self.storage.get() };
 
                 storage.swap_remove(index);
                 is_empty = storage.is_empty();
@@ -143,7 +137,7 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
 
             if is_empty {
                 self.reverse_map.write().clear();
-                return Ok(false)
+                return Ok(false);
             }
 
             // Modify mapping for affected tail entity.
@@ -156,10 +150,8 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
         } else {
             let _guard = self.lock.read()?;
             // Safety: Acquiring a mutable reference to the vec is safe because the
-                // `acquire_write` call above ensures non-mutable access.
-            let storage = unsafe {
-                &*self.storage.get()
-            };
+            // `acquire_write` call above ensures non-mutable access.
+            let storage = unsafe { &*self.storage.get() };
 
             Ok(storage.is_empty())
         }
@@ -200,6 +192,10 @@ impl Components {
     }
 
     pub fn despawn(&self, entity: EntityId) {
-        self.map.retain(|_, store| !store.remove(entity).expect("Cannot despawn components, storage is locked."));
+        self.map.retain(|_, store| {
+            !store
+                .remove(entity)
+                .expect("Cannot despawn components, storage is locked.")
+        });
     }
 }

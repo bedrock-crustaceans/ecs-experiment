@@ -1,6 +1,10 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse::{Parse, ParseStream}, punctuated::Punctuated, token, Attribute, ExprStruct, Field, Ident, ItemStruct, Path, Token};
+use syn::{
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    token, Attribute, ExprStruct, Field, Ident, ItemStruct, Path, Token,
+};
 
 #[proc_macro_derive(Component)]
 pub fn derive_component(input: TokenStream) -> TokenStream {
@@ -13,7 +17,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         fields,
         ..
     } = input;
-    
+
     let expanded = quote! {
         // #(#attrs)*
         // #vis struct #ident {

@@ -1,22 +1,25 @@
-use std::{any::TypeId, marker::PhantomData};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use crate::{
+    AsyncSystem, Component, EntityId, FnContainer, ParameterizedSystem, System, SystemParams,
+    SystemReturnable, World,
+};
 use dashmap::{DashMap, DashSet};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use nohash_hasher::BuildNoHashHasher;
 use smallvec::SmallVec;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::{any::TypeId, marker::PhantomData};
 use tokio::task::LocalSet;
-use crate::{AsyncSystem, Component, EntityId, FnContainer, ParameterizedSystem, System, SystemParams, SystemReturnable, World};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BorrowedTypeDescriptor {
     pub exclusive: bool,
-    pub type_id: TypeId
+    pub type_id: TypeId,
 }
 
 /// System parameters that the scheduler needs to account for.
-/// 
+///
 /// Other system parameters such as [`State`](crate::State) or [`EventWriter`](crate::EventWriter)
 /// do not have to be accounted for in scheduling because they cannot cause any aliasing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,13 +36,13 @@ pub enum SystemParamDescriptor {
 #[derive(Debug)]
 pub struct SystemDescriptor {
     pub id: usize,
-    pub deps: Vec<SystemParamDescriptor>
+    pub deps: Vec<SystemParamDescriptor>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
 struct GraphEdge<T: PartialEq + Copy> {
     pub from: T,
-    pub to: T
+    pub to: T,
 }
 
 impl<T: PartialEq + Copy> From<(T, T)> for GraphEdge<T> {
@@ -48,9 +51,7 @@ impl<T: PartialEq + Copy> From<(T, T)> for GraphEdge<T> {
     }
 }
 
-struct OptimizedGraph {
-
-}
+struct OptimizedGraph {}
 
 #[derive(Default)]
 struct ScheduleGraph {
@@ -67,11 +68,17 @@ impl ScheduleGraph {
         self.nodes.push(node);
     }
 
-    pub fn add_edge<I>(&mut self, edge: I) where I: Into<GraphEdge<SystemId>> {
+    pub fn add_edge<I>(&mut self, edge: I)
+    where
+        I: Into<GraphEdge<SystemId>>,
+    {
         self.edges.push(edge.into());
     }
 
-    pub fn remove_edge<I>(&mut self, edge: I) where I: Into<GraphEdge<SystemId>> {
+    pub fn remove_edge<I>(&mut self, edge: I)
+    where
+        I: Into<GraphEdge<SystemId>>,
+    {
         let edge = edge.into();
         self.edges.retain(|x| *x != edge);
     }
@@ -80,9 +87,7 @@ impl ScheduleGraph {
         let mut timeslots = vec![-1; self.nodes.len()];
         let mut available = vec![true; self.nodes.len()];
 
-        for node in self.nodes {
-
-        }
+        for node in self.nodes {}
     }
 }
 
@@ -103,16 +108,16 @@ pub struct Schedule<K: ExecutorKind> {
     world: Arc<World>,
     next_id: usize,
     systems: HashMap<usize, Arc<dyn System>, BuildNoHashHasher<usize>>,
-    _marker: PhantomData<K>
+    _marker: PhantomData<K>,
 }
 
 impl<K: ExecutorKind> Schedule<K> {
     pub fn new(world: &Arc<World>) -> Self {
-        Self { 
+        Self {
             next_id: 0,
-            systems: HashMap::with_hasher(BuildNoHashHasher::default()), 
-            world: Arc::clone(world), 
-            _marker: PhantomData 
+            systems: HashMap::with_hasher(BuildNoHashHasher::default()),
+            world: Arc::clone(world),
+            _marker: PhantomData,
         }
     }
 
@@ -138,7 +143,7 @@ impl<K: ExecutorKind> Schedule<K> {
     pub fn add_async_system<P, S>(&mut self, system: S) -> SystemId
     where
         P: SystemParams + 'static,
-        S: AsyncSystem<P>
+        S: AsyncSystem<P>,
     {
         let system_id = self.next_id;
         self.next_id += 1;
@@ -154,7 +159,7 @@ impl<K: ExecutorKind> Schedule<K> {
 
     pub async fn run(&mut self) {
         self.world.scheduler.pre_tick(&self.world);
-        
+
         // Run systems. These cannot be transferred between threads while they're running due to
         // the query lock guards. For sync code this is not a problem, but tokio might move async tasks between threads
         // at await points. Therefore the systems need to run inside a LocalSet but this would only run systems
@@ -172,10 +177,9 @@ impl<K: ExecutorKind> Schedule<K> {
 
         // let mut local_set = LocalSet::new();
 
-
         // for sys_index in 0..self.systems.len() {
         //     let world = Arc::clone(&self.world);
-            
+
         //     let sys = self.systems[sys_index].clone();
         //     futures.push(tokio::spawn(async move {
         //         sys.call(&world).await;
@@ -206,7 +210,7 @@ pub struct Scheduler {
     /// Keeps track of entities that need to be despawned at the end of a tick.
     despawn_queue: DashSet<EntityId>,
     /// Keeps track of components to remove from entities at the end of a tick.
-    remove_queue: DashMap<TypeId, HashSet<EntityId>>
+    remove_queue: DashMap<TypeId, HashSet<EntityId>>,
 }
 
 impl Scheduler {
@@ -219,16 +223,15 @@ impl Scheduler {
     }
 
     pub fn schedule_remove_component(&self, entity: EntityId, type_id: TypeId) {
-        let mut entry = self.remove_queue
+        let mut entry = self
+            .remove_queue
             .entry(type_id)
             .or_insert_with(HashSet::new);
 
         entry.value_mut().insert(entity);
     }
 
-    pub fn pre_tick(&self, _world: &Arc<World>) {
-
-    }
+    pub fn pre_tick(&self, _world: &Arc<World>) {}
 
     pub fn post_tick(&self, world: &Arc<World>) {
         self.tick_removal(world);
@@ -248,11 +251,12 @@ impl Scheduler {
     }
 
     fn tick_despawn(&self, world: &Arc<World>) {
-        world.entities.free_many(self.despawn_queue.iter().map(|kv| *kv.key()));
-        self.despawn_queue
-            .retain(|entity| {
-                world.components.despawn(*entity);
-                false
-            });
+        world
+            .entities
+            .free_many(self.despawn_queue.iter().map(|kv| *kv.key()));
+        self.despawn_queue.retain(|entity| {
+            world.components.despawn(*entity);
+            false
+        });
     }
 }

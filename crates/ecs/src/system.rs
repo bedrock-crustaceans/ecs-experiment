@@ -1,23 +1,38 @@
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use parking_lot::RwLock;
-use std::{any::TypeId, future::Future, marker::PhantomData, pin::Pin, sync::{atomic::{AtomicBool, AtomicUsize}, Arc}};
+use std::{
+    any::TypeId,
+    future::Future,
+    marker::PhantomData,
+    pin::Pin,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc,
+    },
+};
 
-use crate::{event::{Event, EventReader, EventWriter}, filter::FilterParams, resource::{Res, ResMut, Resource}, scheduler::{SystemDescriptor, SystemId, SystemParamDescriptor}, sealed, EventState, Query, QueryParams, World};
+use crate::{
+    event::{Event, EventReader, EventWriter},
+    filter::FilterParams,
+    resource::{Res, ResMut, Resource},
+    scheduler::{SystemDescriptor, SystemId, SystemParamDescriptor},
+    sealed, EventState, Query, QueryParams, World,
+};
 
 pub unsafe trait System: Send + Sync {
     fn descriptor(&self) -> SystemDescriptor;
 
     /// # Safety
-    /// 
+    ///
     /// Before running a system you must ensure that the Rust reference aliasing guarantees are upheld.
     /// Any systems requiring mutable access to a component must have unique access.
     fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>;
 
     /// This function takes a self parameter to make [`System`] object-safe.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This function *must* only return `true` for systems that return the type `Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
     fn is_async(&self) -> bool;
 
@@ -57,70 +72,45 @@ impl<P1: SystemParam, P2: SystemParam> SystemParams for (P1, P2) {
     }
 }
 
-unsafe impl<P0, R, F: ParameterizedSystem<P0, R>> System for FnContainer<P0, R, F>
+impl<P1, P2, P3> SystemParams for (P1, P2, P3)
 where
-    P0: SystemParam,
-    R: SystemReturnable
+    P1: SystemParam,
+    P2: SystemParam,
+    P3: SystemParam,
 {
-    fn descriptor(&self) -> SystemDescriptor {
-        SystemDescriptor {
-            id: self.id,
-            deps: vec![P0::descriptor()]
-        }
-    }
+    type ArcState = (Arc<P1::State>, Arc<P2::State>, Arc<P3::State>);
 
-    fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
-        let returned = self.system.call(world, &self.state);
-        if self.is_async() {   
-            debug_assert_eq!(TypeId::of::<R>(), TypeId::of::<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>());
-
-            // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
-            // It is therefore safe to transmute as both types are equal.
-            let cast = unsafe {
-                std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(&returned)
-            };
-            // Prevent dropping the Box, preventing a use-after-free.
-            std::mem::forget(returned);
-
-            cast
-        } else {
-            // Return empty future.
-            Box::pin(async {})
-        }
-    }
-
-    #[inline]
-    fn is_async(&self) -> bool {
-        R::IS_ASYNC
-    }
-
-    fn init(&self, world: &Arc<World>) {
-        P0::init(world, &self.state);
+    fn state(world: &Arc<World>) -> Self::ArcState {
+        (P1::state(world), P2::state(world), P3::state(world))
     }
 }
 
-unsafe impl<P0, P1, R, F: ParameterizedSystem<(P0, P1), R>> System for FnContainer<(P0, P1), R, F>
+unsafe impl<P, R, F: ParameterizedSystem<P, R>> System for FnContainer<P, R, F>
 where
-    P0: SystemParam,
-    P1: SystemParam,
-    R: SystemReturnable
+    P: SystemParam,
+    R: SystemReturnable,
 {
     fn descriptor(&self) -> SystemDescriptor {
         SystemDescriptor {
             id: self.id,
-            deps: vec![P0::descriptor(), P1::descriptor()]
+            deps: vec![P::descriptor()],
         }
     }
 
     fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
         let returned = self.system.call(world, &self.state);
-        if self.is_async() {   
-            debug_assert_eq!(TypeId::of::<R>(), TypeId::of::<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>());
+        if self.is_async() {
+            debug_assert_eq!(
+                TypeId::of::<R>(),
+                TypeId::of::<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>()
+            );
 
             // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
             // It is therefore safe to transmute as both types are equal.
             let cast = unsafe {
-                std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(&returned)
+                std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(
+                    &returned,
+                )
             };
             // Prevent dropping the Box, preventing a use-after-free.
             std::mem::forget(returned);
@@ -138,8 +128,108 @@ where
     }
 
     fn init(&self, world: &Arc<World>) {
-        P0::init(world, &self.state.0);
-        P1::init(world, &self.state.1);
+        P::init(world, &self.state);
+    }
+}
+
+unsafe impl<P1, P2, R, F: ParameterizedSystem<(P1, P2), R>> System for FnContainer<(P1, P2), R, F>
+where
+    P1: SystemParam,
+    P2: SystemParam,
+    R: SystemReturnable,
+{
+    fn descriptor(&self) -> SystemDescriptor {
+        SystemDescriptor {
+            id: self.id,
+            deps: vec![P1::descriptor(), P2::descriptor()],
+        }
+    }
+
+    fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
+        let returned = self.system.call(world, &self.state);
+        if self.is_async() {
+            debug_assert_eq!(
+                TypeId::of::<R>(),
+                TypeId::of::<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>()
+            );
+
+            // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
+            // It is therefore safe to transmute as both types are equal.
+            let cast = unsafe {
+                std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(
+                    &returned,
+                )
+            };
+            // Prevent dropping the Box, preventing a use-after-free.
+            std::mem::forget(returned);
+
+            cast
+        } else {
+            // Return empty future.
+            Box::pin(async {})
+        }
+    }
+
+    #[inline]
+    fn is_async(&self) -> bool {
+        R::IS_ASYNC
+    }
+
+    fn init(&self, world: &Arc<World>) {
+        P1::init(world, &self.state.0);
+        P2::init(world, &self.state.1);
+    }
+}
+
+unsafe impl<P1, P2, P3, R, F: ParameterizedSystem<(P1, P2, P3), R>> System
+    for FnContainer<(P1, P2, P3), R, F>
+where
+    P1: SystemParam,
+    P2: SystemParam,
+    P3: SystemParam,
+    R: SystemReturnable,
+{
+    fn descriptor(&self) -> SystemDescriptor {
+        SystemDescriptor {
+            id: self.id,
+            deps: vec![P1::descriptor(), P2::descriptor(), P3::descriptor()],
+        }
+    }
+
+    fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
+        let returned = self.system.call(world, &self.state);
+        if self.is_async() {
+            debug_assert_eq!(
+                TypeId::of::<R>(),
+                TypeId::of::<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>()
+            );
+
+            // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
+            // It is therefore safe to transmute as both types are equal.
+            let cast = unsafe {
+                std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(
+                    &returned,
+                )
+            };
+            // Prevent dropping the Box, preventing a use-after-free.
+            std::mem::forget(returned);
+
+            cast
+        } else {
+            // Return empty future.
+            Box::pin(async {})
+        }
+    }
+
+    #[inline]
+    fn is_async(&self) -> bool {
+        R::IS_ASYNC
+    }
+
+    fn init(&self, world: &Arc<World>) {
+        P1::init(world, &self.state.0);
+        P2::init(world, &self.state.1);
+        P3::init(world, &self.state.2);
     }
 }
 
@@ -168,50 +258,66 @@ impl SystemParam for () {
 
     fn fetch<S: sealed::Sealed>(_world: &Arc<World>, _state: &Arc<Self::State>) -> Self {}
 
-    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
+    fn state(_world: &Arc<World>) -> Arc<Self::State> {
+        Arc::new(())
+    }
 }
 
 pub type PinnedFut = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
 
 /// Implemented by async systems to put them into storage containers.
-pub trait AsyncSystem<P> where P: SystemParams {
+pub trait AsyncSystem<P>
+where
+    P: SystemParams,
+{
     /// Pins the returned future and puts the system into a container.
     fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static;
 }
 
-impl<P, F, Fut> AsyncSystem<P> for F 
-where 
-    F: Fn(P) -> Fut + Send + Sync + 'static, 
-    Fut: Future<Output = ()> + Send + Sync + 'static, 
-    P: SystemParam + Send + Sync + 'static
+impl<P, F, Fut> AsyncSystem<P> for F
+where
+    F: Fn(P) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = ()> + Send + Sync + 'static,
+    P: SystemParam + 'static,
 {
     fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static {
-        let pinned = move |p1| -> PinnedFut { 
-            Box::pin(self(p1))
-        };
+        let pinned = move |p| -> PinnedFut { Box::pin(self(p)) };
 
         pinned.into_container(id, world)
     }
 }
 
-impl<P1, P2, F, Fut> AsyncSystem<(P1, P2)> for F 
-where 
-    F: Fn(P1, P2) -> Fut + Send + Sync + 'static, 
-    Fut: Future<Output = ()> + Send + Sync + 'static, 
-    P1: SystemParam + Send + Sync + 'static,
-    P2: SystemParam + Send + Sync + 'static
+impl<P1, P2, F, Fut> AsyncSystem<(P1, P2)> for F
+where
+    F: Fn(P1, P2) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = ()> + Send + Sync + 'static,
+    P1: SystemParam + 'static,
+    P2: SystemParam + 'static,
 {
     fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static {
-        let pinned = move |p1, p2| -> PinnedFut {
-            Box::pin(self(p1, p2))
-        };
+        let pinned = move |p1, p2| -> PinnedFut { Box::pin(self(p1, p2)) };
+
+        pinned.into_container(id, world)
+    }
+}
+
+impl<P1, P2, P3, F, Fut> AsyncSystem<(P1, P2, P3)> for F
+where
+    F: Fn(P1, P2, P3) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = ()> + Send + Sync + 'static,
+    P1: SystemParam + 'static,
+    P2: SystemParam + 'static,
+    P3: SystemParam + 'static,
+{
+    fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static {
+        let pinned = move |p1, p2, p3| -> PinnedFut { Box::pin(self(p1, p2, p3)) };
 
         pinned.into_container(id, world)
     }
 }
 
 /// Types that can be used as return values for a system.
-/// 
+///
 /// This is useful for async systems which return futures but is also implemented for unit in the case of sync systems.
 /// In the future this could possibly also be used for returning errors or something in that direction.
 pub trait SystemReturnable: Send + Sync + 'static {
@@ -239,38 +345,45 @@ pub trait ParameterizedSystem<P: SystemParams, R: SystemReturnable>: Send + Sync
     fn call(&self, world: &Arc<World>, state: &P::ArcState) -> R;
 }
 
-// impl<F> ParameterizedSystem<()> for F
-// where
-//     F: Fn(),
-// {
-//     fn call(&self, _world: Arc<World>) {
-//         self();
-//     }
-// }
-
-impl<F, R, P0> ParameterizedSystem<P0, R> for F
+impl<F, R, P> ParameterizedSystem<P, R> for F
 where
-    F: Fn(P0) -> R + Send + Sync,
-    P0: SystemParam,
-    R: SystemReturnable
+    F: Fn(P) -> R + Send + Sync,
+    P: SystemParam,
+    R: SystemReturnable,
 {
-    fn call(&self, world: &Arc<World>, state: &Arc<P0::State>) -> R {
-        let p0 = P0::fetch::<sealed::Sealer>(world, state);
-        self(p0)
+    fn call(&self, world: &Arc<World>, state: &Arc<P::State>) -> R {
+        let p = P::fetch::<sealed::Sealer>(world, state);
+        self(p)
     }
 }
 
-impl<F, R, P0, P1> ParameterizedSystem<(P0, P1), R> for F
+impl<F, R, P1, P2> ParameterizedSystem<(P1, P2), R> for F
 where
-    F: Fn(P0, P1) -> R + Send + Sync,
-    P0: SystemParam,
+    F: Fn(P1, P2) -> R + Send + Sync,
     P1: SystemParam,
-    R: SystemReturnable
+    P2: SystemParam,
+    R: SystemReturnable,
 {
-    fn call(&self, world: &Arc<World>, state: &<(P0, P1) as SystemParams>::ArcState) -> R {
-        let p0 = P0::fetch::<sealed::Sealer>(world, &state.0);
-        let p1 = P1::fetch::<sealed::Sealer>(world, &state.1);
-        self(p0, p1)
+    fn call(&self, world: &Arc<World>, state: &<(P1, P2) as SystemParams>::ArcState) -> R {
+        let p1 = P1::fetch::<sealed::Sealer>(world, &state.0);
+        let p2 = P2::fetch::<sealed::Sealer>(world, &state.1);
+        self(p1, p2)
+    }
+}
+
+impl<F, R, P1, P2, P3> ParameterizedSystem<(P1, P2, P3), R> for F
+where
+    F: Fn(P1, P2, P3) -> R + Send + Sync,
+    P1: SystemParam,
+    P2: SystemParam,
+    P3: SystemParam,
+    R: SystemReturnable,
+{
+    fn call(&self, world: &Arc<World>, state: &<(P1, P2, P3) as SystemParams>::ArcState) -> R {
+        let p1 = P1::fetch::<sealed::Sealer>(world, &state.0);
+        let p2 = P2::fetch::<sealed::Sealer>(world, &state.1);
+        let p3 = P3::fetch::<sealed::Sealer>(world, &state.2);
+        self(p1, p2, p3)
     }
 }
 
@@ -295,7 +408,7 @@ impl Systems {
         let lock = self.storage.read();
         for sys_index in 0..self.storage.read().len() {
             let world = Arc::clone(world);
-            
+
             let sys = lock[sys_index].clone();
             futures.push(tokio::spawn(async move {
                 sys.call(&world).await;

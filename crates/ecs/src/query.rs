@@ -1,8 +1,17 @@
-use std::{any::TypeId, borrow::Borrow, marker::PhantomData, sync::{atomic::Ordering, Arc}};
+use std::{
+    any::TypeId,
+    borrow::Borrow,
+    marker::PhantomData,
+    sync::{atomic::Ordering, Arc},
+};
 
 use smallvec::SmallVec;
 
-use crate::{scheduler::{BorrowedTypeDescriptor, SystemParamDescriptor}, sealed, Component, EcsError, EcsResult, Entity, EntityIter, FilterParams, SystemParam, TypedStorage, World};
+use crate::{
+    scheduler::{BorrowedTypeDescriptor, SystemParamDescriptor},
+    sealed, Component, EcsError, EcsResult, Entity, EntityIter, FilterParams, SystemParam,
+    TypedStorage, World,
+};
 
 pub trait QueryParams {
     type Fetchable<'query>;
@@ -10,7 +19,9 @@ pub trait QueryParams {
     const EXCLUSIVE: bool;
 
     fn descriptor() -> SmallVec<[BorrowedTypeDescriptor; 3]>;
-    fn type_id() -> TypeId { panic!("This QueryParams implementation does not require the `type_id` function") }
+    fn type_id() -> TypeId {
+        panic!("This QueryParams implementation does not require the `type_id` function")
+    }
 
     fn fetch<'w>(world: &'w World, entity: Entity) -> Option<Self::Fetchable<'w>>;
     /// Ensures that the entity has the requested components.
@@ -43,8 +54,11 @@ impl QueryParams for Entity {
         true
     }
 
-    fn get_locks(_world: &World) -> EcsResult<()> { Ok(()) /* Entities require no locks */ }
-    fn release_locks(_world: &World) { /* Entities require no locks. */ }
+    fn get_locks(_world: &World) -> EcsResult<()> {
+        Ok(()) /* Entities require no locks */
+    }
+    fn release_locks(_world: &World) { /* Entities require no locks. */
+    }
 }
 
 impl<T: Component> QueryParams for &T {
@@ -57,7 +71,7 @@ impl<T: Component> QueryParams for &T {
 
         deps.push(BorrowedTypeDescriptor {
             exclusive: Self::EXCLUSIVE,
-            type_id: TypeId::of::<T>()
+            type_id: TypeId::of::<T>(),
         });
 
         deps
@@ -68,7 +82,11 @@ impl<T: Component> QueryParams for &T {
     }
 
     fn fetch<'w>(world: &'w World, entity: Entity) -> Option<Self::Fetchable<'w>> {
-        debug_assert_eq!(TypeId::of::<&T>(), TypeId::of::<Self::Fetchable<'static>>(), "QueryParams::Fetchable is incorrect type");
+        debug_assert_eq!(
+            TypeId::of::<&T>(),
+            TypeId::of::<Self::Fetchable<'static>>(),
+            "QueryParams::Fetchable is incorrect type"
+        );
 
         // Instead of keeping track of lock guards like before, we should instead access the components directly.
         // The scheduler will take care of aliasing issues as it will not schedule mutable queries at the same time as aliased ones.
@@ -82,9 +100,7 @@ impl<T: Component> QueryParams for &T {
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
         let storage_index = *typed.map.get(&entity.id())?.value();
-        let storage = unsafe {
-            &*typed.storage.get()
-        };
+        let storage = unsafe { &*typed.storage.get() };
         let component = &storage[storage_index];
 
         let cast = unsafe {
@@ -117,16 +133,14 @@ impl<T: Component> QueryParams for &T {
 
         // Safety: This code is only called in the `Drop` impl of a `Query`.
         // If a query has been constructed then that means this thread must have acquired the locks succesfully.
-        unsafe {
-            typed.lock.force_release_read()
-        }
+        unsafe { typed.lock.force_release_read() }
     }
 
     fn get_locks(world: &World) -> EcsResult<()> {
         let type_id = TypeId::of::<T>();
         let Some(typeless) = world.components.map.get(&type_id) else {
             // Storage does not exist so it does not have to be locked.
-            return Ok(())
+            return Ok(());
         };
 
         let typed: &TypedStorage<T> = typeless
@@ -152,7 +166,7 @@ impl<T: Component> QueryParams for &mut T {
 
         deps.push(BorrowedTypeDescriptor {
             exclusive: Self::EXCLUSIVE,
-            type_id: TypeId::of::<T>()
+            type_id: TypeId::of::<T>(),
         });
 
         deps
@@ -163,7 +177,11 @@ impl<T: Component> QueryParams for &mut T {
     }
 
     fn fetch<'w>(world: &'w World, entity: Entity) -> Option<Self::Fetchable<'w>> {
-        debug_assert_eq!(TypeId::of::<&mut T>(), TypeId::of::<Self::Fetchable<'static>>(), "QueryParams::Fetchable is incorrect type");
+        debug_assert_eq!(
+            TypeId::of::<&mut T>(),
+            TypeId::of::<Self::Fetchable<'static>>(),
+            "QueryParams::Fetchable is incorrect type"
+        );
 
         // Instead of keeping track of lock guards like before, we should instead access the components directly.
         // The scheduler will take care of aliasing issues as it will not schedule mutable queries at the same time as aliased ones.
@@ -178,9 +196,7 @@ impl<T: Component> QueryParams for &mut T {
             .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
 
         let storage_index = *typed.map.get(&entity.id())?.value();
-        let storage = unsafe {
-            &mut *typed.storage.get()
-        };
+        let storage = unsafe { &mut *typed.storage.get() };
         let component = &mut storage[storage_index];
 
         let cast = unsafe {
@@ -202,7 +218,7 @@ impl<T: Component> QueryParams for &mut T {
         let type_id = TypeId::of::<T>();
         let Some(typeless) = world.components.map.get(&type_id) else {
             // Storage does not exist so it does not have to be locked.
-            return Ok(())
+            return Ok(());
         };
 
         let typed: &TypedStorage<T> = typeless
@@ -221,7 +237,7 @@ impl<T: Component> QueryParams for &mut T {
         let type_id = TypeId::of::<T>();
         let Some(typeless) = world.components.map.get(&type_id) else {
             // Storage to be unlocked does not exist.
-            return
+            return;
         };
 
         let typed: &TypedStorage<T> = typeless
@@ -232,9 +248,7 @@ impl<T: Component> QueryParams for &mut T {
 
         // Safety: This code is only called in the `Drop` impl of a `Query`.
         // If a query has been constructed then that means this thread must have acquired the locks succesfully.
-        unsafe {
-            typed.lock.force_release_write()
-        }
+        unsafe { typed.lock.force_release_write() }
     }
 }
 
@@ -248,12 +262,12 @@ impl<Q1: QueryParams, Q2: QueryParams> QueryParams for (Q1, Q2) {
 
         deps.push(BorrowedTypeDescriptor {
             exclusive: Q1::EXCLUSIVE,
-            type_id: Q1::type_id()
+            type_id: Q1::type_id(),
         });
 
         deps.push(BorrowedTypeDescriptor {
             exclusive: Q2::EXCLUSIVE,
-            type_id: Q2::type_id()
+            type_id: Q2::type_id(),
         });
 
         deps
@@ -275,7 +289,7 @@ impl<Q1: QueryParams, Q2: QueryParams> QueryParams for (Q1, Q2) {
 
         if let Err(err) = Q2::get_locks(world) {
             Q1::release_locks(world);
-            return Err(err)
+            return Err(err);
         }
 
         Ok(())
@@ -290,13 +304,13 @@ impl<Q1: QueryParams, Q2: QueryParams> QueryParams for (Q1, Q2) {
 pub struct Query<Q: QueryParams, F: FilterParams = ()> {
     world: Arc<World>,
     /// Use pointer in marker to ensure this type cannot be sent between threads.
-    /// 
+    ///
     /// This is required because when the query is started it obtains a lock on the storages.
-    /// A lock should only be used from the thread that owns it. If this query were to be 
-    /// transferred to another thread, it would cause undefined behaviour. 
-    /// 
+    /// A lock should only be used from the thread that owns it. If this query were to be
+    /// transferred to another thread, it would cause undefined behaviour.
+    ///
     /// I don't see any easy way to make a query thread safe as that would require moving lock guards between threads.
-    _marker: PhantomData<*const (Q, F)>
+    _marker: PhantomData<*const (Q, F)>,
 }
 
 unsafe impl<Q: QueryParams, F: FilterParams> Send for Query<Q, F> {}
@@ -307,7 +321,10 @@ impl<Q: QueryParams, F: FilterParams> Query<Q, F> {
         // Obtain lock on component storage.
         Q::get_locks(world)?;
 
-        Ok(Self { world: Arc::clone(world), _marker: PhantomData })
+        Ok(Self {
+            world: Arc::clone(world),
+            _marker: PhantomData,
+        })
     }
 }
 
@@ -322,7 +339,9 @@ impl<Q: QueryParams, F: FilterParams> SystemParam for Query<Q, F> {
         Query::new(world).expect("Failed to create query")
     }
 
-    fn state(_world: &Arc<World>) -> Arc<Self::State> { Arc::new(()) }
+    fn state(_world: &Arc<World>) -> Arc<Self::State> {
+        Arc::new(())
+    }
 }
 
 impl<Q: QueryParams, F: FilterParams> Drop for Query<Q, F> {
@@ -344,7 +363,7 @@ impl<'query, Q: QueryParams, F: FilterParams> IntoIterator for &'query Query<Q, 
 
 pub struct QueryIter<'query, Q: QueryParams, F: FilterParams> {
     query: &'query Query<Q, F>,
-    entities: EntityIter<'query, Q, F>
+    entities: EntityIter<'query, Q, F>,
 }
 
 impl<'query, Q: QueryParams, F: FilterParams> Iterator for QueryIter<'query, Q, F> {
@@ -357,11 +376,11 @@ impl<'query, Q: QueryParams, F: FilterParams> Iterator for QueryIter<'query, Q, 
     }
 }
 
-impl<'query, Q: QueryParams, F: FilterParams> From<&'query Query<Q, F>> for QueryIter<'query, Q, F> {
+impl<'query, Q: QueryParams, F: FilterParams> From<&'query Query<Q, F>>
+    for QueryIter<'query, Q, F>
+{
     fn from(query: &'query Query<Q, F>) -> Self {
         let entities = query.world.entities.iter(&query.world);
-        QueryIter {
-            query, entities
-        }
+        QueryIter { query, entities }
     }
 }

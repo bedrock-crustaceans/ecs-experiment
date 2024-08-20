@@ -1,21 +1,21 @@
+use ecs_derive::Component;
+use parking_lot::RwLock;
 use std::future::Future;
 use std::pin::Pin;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-use ecs_derive::Component;
-use parking_lot::RwLock;
 
 use crate::entity::Entity;
-use crate::{Component, EntityId, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, State, SystemParam, Without, World};
 use crate::filter::With;
+use crate::{
+    Component, EntityId, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, State,
+    SystemParam, Without, World,
+};
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
 
-fn detection(
-    query: Query<(Entity, &Health), Without<Immortal>>,
-    mut writer: EventWriter<Killed>
-) {
+fn detection(query: Query<(Entity, &Health), Without<Immortal>>, mut writer: EventWriter<Killed>) {
     for (entity, health) in &query {
         if health.0 <= 0.0 {
             writer.write(Killed { entity });
@@ -25,8 +25,12 @@ fn detection(
 
 fn execution(mut reader: EventReader<Killed>, mut counter: ResMut<KillCounter>) {
     for event in reader.read() {
-        counter.0 += 1;       
-        println!("Entity {:?} has been killed. {} entities killed so far", event.entity.id(), counter.0);
+        counter.0 += 1;
+        println!(
+            "Entity {:?} has been killed. {} entities killed so far",
+            event.entity.id(),
+            counter.0
+        );
         event.entity.despawn();
     }
 }
@@ -52,7 +56,7 @@ fn interval_system(query: Query<&mut LastUpdate>, mut writer: EventWriter<Interv
 
 #[derive(Default)]
 struct SystemState {
-    counter: usize
+    counter: usize,
 }
 
 fn state_system(mut state: State<SystemState>) {
@@ -62,21 +66,30 @@ fn state_system(mut state: State<SystemState>) {
 
 #[derive(Default)]
 struct TickCounter {
-    ticks: usize
+    ticks: usize,
 }
 
-async fn async_system(mut reader: EventReader<Killed>, counter: Res<KillCounter>, mut state: State<TickCounter>) {
+async fn async_system(
+    mut reader: EventReader<Killed>,
+    counter: Res<KillCounter>,
+    mut state: State<TickCounter>,
+) {
     tokio::time::sleep(Duration::from_secs(1)).await;
     state.ticks += 1;
 
-    println!("After {} second(s), killed {} entities", state.ticks, counter.0);
+    println!(
+        "After {} second(s), killed {} entities",
+        state.ticks, counter.0
+    );
     for Killed { entity } in reader.read() {
         println!("Killed {:?}", entity.id());
     }
 }
 
 #[derive(Debug, Component)]
-struct LastUpdate { instant: Instant }
+struct LastUpdate {
+    instant: Instant,
+}
 
 #[derive(Debug, Copy, Clone)]
 struct Interval;
@@ -96,7 +109,7 @@ struct Health(f32);
 
 #[derive(Clone)]
 struct Killed {
-    entity: Entity
+    entity: Entity,
 }
 
 impl Event for Killed {}
@@ -112,7 +125,9 @@ async fn test() {
     world.spawn(Health(1.0));
     world.spawn(Health(0.0));
     world.spawn((Health(0.0), Immortal));
-    world.spawn(LastUpdate { instant: Instant::now() });
+    world.spawn(LastUpdate {
+        instant: Instant::now(),
+    });
     world.add_resource(KillCounter(0));
 
     let mut schedule = world.schedule_single_threaded();
@@ -127,6 +142,6 @@ async fn test() {
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     for _ in 0..2 {
         schedule.run().await;
-        interval.tick().await;        
+        interval.tick().await;
     }
 }

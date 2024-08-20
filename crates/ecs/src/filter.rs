@@ -1,12 +1,12 @@
-use std::marker::PhantomData;
 use crate::{Component, Entity};
+use std::marker::PhantomData;
 
 pub trait Filter {
     fn filter(entity: &Entity) -> bool;
 }
 
 pub struct With<T: Component> {
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T: Component> Filter for With<T> {
@@ -16,7 +16,7 @@ impl<T: Component> Filter for With<T> {
 }
 
 pub struct Without<T: Component> {
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T: Component> Filter for Without<T> {
@@ -26,7 +26,7 @@ impl<T: Component> Filter for Without<T> {
 }
 
 pub struct Added<T: Component> {
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T: Component> Filter for Added<T> {
@@ -36,7 +36,7 @@ impl<T: Component> Filter for Added<T> {
 }
 
 pub struct Removed<T: Component> {
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T: Component> Filter for Removed<T> {
@@ -46,7 +46,7 @@ impl<T: Component> Filter for Removed<T> {
 }
 
 pub struct Changed<T: Component> {
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T: Component> Filter for Changed<T> {
@@ -72,9 +72,9 @@ impl<F: Filter> FilterParams for F {
 }
 
 impl<F0, F1> FilterParams for (F0, F1)
-    where
-        F0: FilterParams,
-        F1: FilterParams,
+where
+    F0: FilterParams,
+    F1: FilterParams,
 {
     fn filter(entity: &Entity) -> bool {
         F0::filter(entity) && F1::filter(entity)

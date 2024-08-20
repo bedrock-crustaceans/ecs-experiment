@@ -1,10 +1,13 @@
 use crate::component::{Components, SpawnBundle};
 use crate::entity::{Entities, Entity};
-use crate::{AsyncSystem, Events, FnContainer, ParameterizedSystem, PinnedFut, Resource, Resources, System, SystemParams, SystemReturnable, Systems};
+use crate::scheduler::{MultiThreadedExecutor, Schedule, Scheduler, SingleThreadedExecutor};
+use crate::{
+    AsyncSystem, Events, FnContainer, ParameterizedSystem, PinnedFut, Resource, Resources, System,
+    SystemParams, SystemReturnable, Systems,
+};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use crate::scheduler::{MultiThreadedExecutor, Schedule, Scheduler, SingleThreadedExecutor};
 
 #[derive(Default)]
 pub struct World {
@@ -13,7 +16,7 @@ pub struct World {
     pub(crate) systems: Systems,
     pub(crate) scheduler: Scheduler,
     pub(crate) events: Events,
-    pub(crate) resources: Resources
+    pub(crate) resources: Resources,
 }
 
 impl World {

@@ -3,28 +3,28 @@ mod test;
 
 mod component;
 mod entity;
+mod error;
 mod event;
+mod filter;
 mod query;
 mod resource;
-mod system;
-mod world;
 mod scheduler;
-mod filter;
-mod error;
-mod util;
 mod state;
+mod system;
+mod util;
+mod world;
 
-pub use state::*;
-pub use util::*;
-pub use error::*;
 pub use component::*;
 pub use entity::*;
+pub use error::*;
 pub use event::*;
+pub use filter::*;
 pub use query::*;
 pub use resource::*;
+pub use state::*;
 pub use system::*;
+pub use util::*;
 pub use world::*;
-pub use filter::*;
 
 fn hello_world() {
     println!("Hello");
@@ -34,11 +34,11 @@ pub mod prelude {
     use super::component::Component;
     use super::entity::{Entity, EntityId};
     use super::event::{Event, EventId, EventReader, EventWriter};
+    use super::filter::{Added, Changed, Removed, With, Without};
     use super::query::Query;
-    use super::resource::{Resource, Res, ResMut};
-    use super::world::World;
-    use super::filter::{With, Without, Added, Changed, Removed};
+    use super::resource::{Res, ResMut, Resource};
     use super::state::State;
+    use super::world::World;
 }
 
 pub(crate) mod sealed {

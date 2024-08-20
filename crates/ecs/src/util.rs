@@ -1,4 +1,8 @@
-use std::{marker::PhantomData, ops::Deref, sync::atomic::{AtomicUsize, Ordering}};
+use std::{
+    marker::PhantomData,
+    ops::Deref,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use crate::{EcsError, EcsResult};
 
@@ -20,7 +24,7 @@ trait LockKind {
 
 pub struct LockGuard<'lock, K: LockKind> {
     lock: &'lock PersistentLock,
-    _marker: PhantomData<K>
+    _marker: PhantomData<K>,
 }
 
 impl<'lock, K: LockKind> Drop for LockGuard<'lock, K> {
@@ -42,24 +46,29 @@ impl<'lock, K: LockKind> Drop for LockGuard<'lock, K> {
 }
 
 pub struct PersistentLock {
-    pub(crate) counter: AtomicUsize
+    pub(crate) counter: AtomicUsize,
 }
 
 impl PersistentLock {
     pub fn new() -> Self {
-        Self { counter: AtomicUsize::new(0) }
+        Self {
+            counter: AtomicUsize::new(0),
+        }
     }
 
     pub fn read(&self) -> EcsResult<LockGuard<ReadLock>> {
         if self.counter.load(Ordering::SeqCst) == usize::MAX {
             // Lock is already being used for writing.
-            return Err(EcsError::StorageLocked("write lock active, cannot acquire read lock"))
+            return Err(EcsError::StorageLocked(
+                "write lock active, cannot acquire read lock",
+            ));
         }
 
         self.counter.fetch_add(1, Ordering::SeqCst);
         Ok(LockGuard {
-            lock: self, _marker: PhantomData
-        })        
+            lock: self,
+            _marker: PhantomData,
+        })
     }
 
     pub unsafe fn force_release_read(&self) {
@@ -69,12 +78,15 @@ impl PersistentLock {
     pub fn write(&self) -> EcsResult<LockGuard<WriteLock>> {
         if self.counter.load(Ordering::SeqCst) != 0 {
             // Lock is already being used for reading.
-            return Err(EcsError::StorageLocked("read or write lock active, cannot acquire write lock"))
+            return Err(EcsError::StorageLocked(
+                "read or write lock active, cannot acquire write lock",
+            ));
         }
 
         self.counter.store(usize::MAX, Ordering::SeqCst);
         Ok(LockGuard {
-            lock: self, _marker: PhantomData
+            lock: self,
+            _marker: PhantomData,
         })
     }
 
