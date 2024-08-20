@@ -2,8 +2,10 @@ use std::{any::TypeId, marker::PhantomData};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use dashmap::{DashMap, DashSet};
+use futures::stream::FuturesUnordered;
 use nohash_hasher::BuildNoHashHasher;
 use smallvec::SmallVec;
+use tokio::task::LocalSet;
 use crate::{AsyncSystem, Component, EntityId, FnContainer, ParameterizedSystem, System, SystemParams, SystemReturnable, World};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,6 +149,40 @@ impl<K: ExecutorKind> Schedule<K> {
 
         self.systems.insert(system_id, contained);
         SystemId(system_id)
+    }
+
+    pub async fn run(&mut self) {
+        self.world.scheduler.pre_tick(&self.world);
+        
+        // Run systems. These cannot be transferred between threads while they're running due to
+        // the query lock guards. For sync code this is not a problem, but tokio might move async tasks between threads
+        // at await points. Therefore the systems need to run inside a LocalSet but this would only run systems
+        // on the main thread. Maybe Rayon is a good idea?
+
+        // let mut futures = FuturesUnordered::new();
+        // for (id, system) in &self.systems {
+        //     let world = Arc::clone(&self.world);
+        //     let system = Arc::clone(system);
+
+        //     system.call(&world);
+        // }
+
+        // let mut local_set = LocalSet::new();
+
+
+        // for sys_index in 0..self.systems.len() {
+        //     let world = Arc::clone(&self.world);
+            
+        //     let sys = self.systems[sys_index].clone();
+        //     futures.push(tokio::spawn(async move {
+        //         sys.call(&world).await;
+        //     }));
+        // }
+
+        // // Run all futures to completion
+        // while let Some(_) = futures.next().await {}
+
+        self.world.scheduler.post_tick(&self.world);
     }
 }
 
